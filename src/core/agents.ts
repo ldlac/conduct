@@ -1,6 +1,18 @@
 import { run } from "./git.js";
 import type { AgentBackend } from "./types.js";
 
+/**
+ * Heuristic for "the agent's final message asked the user something". Looks at
+ * the tail of the text, ignoring trailing whitespace and the closing
+ * punctuation/markdown a question might end with (quotes, parens, emphasis), so
+ * e.g. `Should I proceed?"` or `...continue?**` still count.
+ */
+function endsWithQuestion(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  const tail = text.trimEnd().replace(/[)\]"'`*_>]+$/, "").trimEnd();
+  return tail.endsWith("?");
+}
+
 /** Cache of `which <bin>` lookups. */
 const availability = new Map<string, boolean>();
 
@@ -54,14 +66,21 @@ const claude: AgentBackend = {
       }) + "\n"
     );
   },
-  turnEnded(line) {
+  awaitsReply(line) {
     const trimmed = line.trim();
     if (!trimmed) return false;
+    let evt: any;
     try {
-      return JSON.parse(trimmed).type === "result";
+      evt = JSON.parse(trimmed);
     } catch {
       return false;
     }
+    // Every turn ends on a `result` event whose `result` field holds the
+    // agent's final message. Because the session stays alive between turns, it
+    // only genuinely needs the user when that final message asked a question —
+    // otherwise the job is simply done and we don't prompt for a reply.
+    if (evt.type !== "result") return false;
+    return endsWithQuestion(evt.result);
   },
   parseLine(line) {
     const trimmed = line.trim();
@@ -112,7 +131,10 @@ const codex: AgentBackend = {
  * API tokens: it writes a file so there is a diff to review and merge, then —
  * like the real interactive agents — keeps reading stdin and echoes each reply
  * back, so the answer-a-question flow can be exercised end to end. Each line we
- * write to its stdin is a bare line of text (see encodeInput).
+ * write to its stdin is a bare line of text (see encodeInput). It only signals
+ * "awaiting input" when the message it just echoed ended in a question mark,
+ * mirroring the real agents: a plain instruction finishes the turn quietly,
+ * while a question parks the workspace waiting for a reply.
  */
 const mock: AgentBackend = {
   id: "mock",
@@ -122,9 +144,10 @@ const mock: AgentBackend = {
     const script = [
       'echo "writing CONDUCT_NOTES.md"',
       "printf '# Conduct\\n' > CONDUCT_NOTES.md",
-      // Read the initial prompt, then loop on follow-up replies, ending each
-      // turn with a sentinel the manager treats as "awaiting input".
-      'while IFS= read -r line; do echo "you said: $line"; printf "%s\\n" "$line" >> CONDUCT_NOTES.md; echo "@@turn-end@@"; done',
+      // Read the initial prompt, then loop on follow-up replies. End each turn
+      // with a sentinel that records whether the message was a question, so the
+      // manager only marks the workspace as awaiting input when it was.
+      'while IFS= read -r line; do echo "you said: $line"; printf "%s\\n" "$line" >> CONDUCT_NOTES.md; case "$line" in *\\?) echo "@@await@@";; *) echo "@@done@@";; esac; done',
     ].join(" && ");
     return { cmd: "bash", args: ["-c", script] };
   },
@@ -132,12 +155,13 @@ const mock: AgentBackend = {
     // Bash `read` is line-oriented, so collapse newlines into spaces.
     return text.replace(/\r?\n/g, " ") + "\n";
   },
-  turnEnded(line) {
-    return line.trim() === "@@turn-end@@";
+  awaitsReply(line) {
+    return line.trim() === "@@await@@";
   },
   parseLine(line) {
-    // Hide the internal turn-end sentinel from the output view.
-    return line.trim() === "@@turn-end@@" ? null : line;
+    // Hide the internal turn-end sentinels from the output view.
+    const t = line.trim();
+    return t === "@@await@@" || t === "@@done@@" ? null : line;
   },
 };
 
