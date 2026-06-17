@@ -64,6 +64,7 @@ pnpm start ../my-repo   # or point at another repo
 | `d`                | open workspace on the diff view                |
 | `m`                | merge selected workspace into the base branch  |
 | `s`                | stop the running agent                         |
+| `S`                | ask the agent to turn its work into a skill    |
 | `R`                | restart the agent in the existing worktree     |
 | `x`                | archive (stop agent, remove worktree + branch) |
 | `q`                | quit                                           |
@@ -75,6 +76,7 @@ pnpm start ../my-repo   # or point at another repo
 | `o` / `↵`          | output view (tails live)          |
 | `d`                | diff view                         |
 | `i`                | reply to the agent (answer a Q)   |
+| `S`                | ask the agent to build a skill    |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff                   |
 | `R`                | restart the agent                 |
 | `r`                | refresh the diff                  |
