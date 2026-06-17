@@ -16,12 +16,17 @@ interface Props {
   filtering?: boolean;
   /** The current filter query (applied even when not actively typing). */
   filter?: string;
+  /** When true, the user is editing the selected workspace's title; show the
+   * live edit instead of the repo/message line. */
+  renaming?: boolean;
+  /** The in-progress title edit (while renaming). */
+  renameText?: string;
 }
 
 const HINTS: Record<string, string> = {
-  list: "n new · ↑/↓ select · ↵ open · d diff · / filter · c shell · m merge · s stop · S skill · R restart · x archive · q quit",
+  list: "n new · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
   detail:
-    "↵/o output · d diff · c shell · i reply · ↑/↓ scroll · m merge · s stop · S skill · R restart · r refresh · esc back",
+    "↵/o output · d diff · c shell · i reply · ↑/↓ scroll · e rename · C clone · m merge · s stop · R restart · ? help · esc back",
   new: "fill the form · esc cancel",
 };
 
@@ -34,11 +39,20 @@ export function StatusBar({
   usage,
   filtering,
   filter,
+  renaming,
+  renameText,
 }: Props) {
   const tally = usageText(usage);
   return (
     <Box flexDirection="column">
-      {filtering ? (
+      {renaming ? (
+        <Text>
+          <Text color="cyan">rename: </Text>
+          {renameText}
+          <Text color="cyan">▏</Text>
+          <Text dimColor> (↵ save · esc cancel)</Text>
+        </Text>
+      ) : filtering ? (
         <Text>
           <Text color="cyan">filter: </Text>
           {filter}

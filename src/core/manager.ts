@@ -432,6 +432,42 @@ export class WorkspaceManager extends EventEmitter {
     this.startAgent(ws);
   }
 
+  /**
+   * Rename a workspace's display title in place. Only the title changes — the
+   * branch, worktree path, and slug were derived from the original title at
+   * creation and renaming them would orphan the on-disk worktree, so this is
+   * purely cosmetic and safe at any point in the lifecycle. A blank title is
+   * ignored. Persisted like any other change. Returns false if there's nothing
+   * to rename.
+   */
+  renameWorkspace(id: string, title: string): boolean {
+    const ws = this.workspaces.get(id);
+    const trimmed = title.trim();
+    if (!ws || !trimmed || trimmed === ws.title) return false;
+    ws.title = trimmed;
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Create a fresh workspace from an existing one's prompt and agent — a brand
+   * new worktree off the current base branch, exactly as if the user had retyped
+   * the same thing into the new-workspace form. Useful for re-rolling a prompt
+   * (run it again from a clean tree) or fanning a good prompt across attempts.
+   * The clone is fully independent: it shares no worktree, branch, or history
+   * with the original. Returns the new workspace, or undefined if the source is
+   * gone.
+   */
+  async cloneWorkspace(id: string): Promise<Workspace | undefined> {
+    const src = this.workspaces.get(id);
+    if (!src) return undefined;
+    return this.createWorkspace({
+      title: cloneTitle(src.title),
+      prompt: src.prompt,
+      agentId: src.agentId,
+    });
+  }
+
   async getDiff(id: string): Promise<string> {
     const ws = this.workspaces.get(id);
     if (!ws || !ws.path) return "";
@@ -535,6 +571,21 @@ export function sumUsage(workspaces: Workspace[]): TokenUsage | undefined {
     if (ws.usage) total = addUsage(total, ws.usage);
   }
   return total;
+}
+
+/**
+ * Derive a title for a cloned workspace. The first clone of "Fix login" becomes
+ * "Fix login (copy)"; cloning that again yields "(copy 2)", "(copy 3)", … so
+ * repeatedly re-rolling a prompt produces readable, distinct titles rather than
+ * a pile of identical "(copy)" names.
+ */
+function cloneTitle(title: string): string {
+  const m = title.match(/^(.*?) \(copy(?: (\d+))?\)$/);
+  if (m) {
+    const n = m[2] ? parseInt(m[2], 10) + 1 : 2;
+    return `${m[1]} (copy ${n})`;
+  }
+  return `${title} (copy)`;
 }
 
 async function pathExists(p: string): Promise<boolean> {
