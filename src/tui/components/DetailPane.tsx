@@ -26,6 +26,15 @@ function diffColor(line: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Number of body rows the pane can show, given its total height and whether
+ * the reply box is open. Exported so the App can compute scroll bounds with
+ * the exact same arithmetic the pane renders with.
+ */
+export function detailBodyHeight(height: number, composing: boolean): number {
+  return Math.max(3, height - 4 - (composing ? 1 : 0));
+}
+
 export function DetailPane({
   ws,
   view,
@@ -56,15 +65,26 @@ export function DetailPane({
   }
 
   // Reserve a row for the reply box when it's open.
-  const bodyHeight = Math.max(3, height - 4 - (composing ? 1 : 0));
-  let lines: string[];
-  if (view === "diff") {
-    const all = diff ? diff.split("\n") : ["(no changes yet)"];
-    lines = all.slice(scroll, scroll + bodyHeight);
-  } else {
-    // Tail the output so the latest activity is always visible.
-    lines = ws.output.slice(-bodyHeight);
-  }
+  const bodyHeight = detailBodyHeight(height, composing);
+  const all =
+    view === "diff"
+      ? diff
+        ? diff.split("\n")
+        : ["(no changes yet)"]
+      : ws.output.length
+        ? ws.output
+        : ["(no output yet)"];
+  // `scroll` is a top offset clamped by the App; for the output view the App
+  // pins it to the bottom (tail) until the user scrolls up.
+  const top = Math.min(Math.max(0, scroll), Math.max(0, all.length - bodyHeight));
+  const lines = all.slice(top, top + bodyHeight);
+
+  // Position indicator, shown only when the content is taller than the pane.
+  const last = Math.min(top + bodyHeight, all.length);
+  const scrollable = all.length > bodyHeight;
+  const position = scrollable
+    ? `  ${top + 1}-${last}/${all.length}${last < all.length ? " ↓" : ""}`
+    : "";
 
   return (
     <Box
@@ -84,7 +104,10 @@ export function DetailPane({
           <Text color="yellow"> · awaiting input (i to reply)</Text>
         )}
       </Text>
-      <Text dimColor>{view === "diff" ? "— diff —" : "— output —"}</Text>
+      <Text dimColor>
+        {view === "diff" ? "— diff —" : "— output —"}
+        {position}
+      </Text>
       <Box flexDirection="column" height={bodyHeight} overflow="hidden">
         {lines.map((l, i) => (
           <Text
