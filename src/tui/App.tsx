@@ -10,6 +10,7 @@ import {
   wrappedRowCount,
 } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { HelpOverlay } from "./components/HelpOverlay.js";
 import {
   NewWorkspaceForm,
   type AgentInfo,
@@ -78,6 +79,14 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // the list even after the user stops typing, until cleared with esc.
   const [filtering, setFiltering] = useState(false);
   const [filter, setFilter] = useState("");
+  // Inline rename of the selected workspace's title. Like the filter box, the
+  // rename box owns the keyboard while open so letters edit the title instead of
+  // triggering commands; `renameText` is the in-progress edit.
+  const [renaming, setRenaming] = useState(false);
+  const [renameText, setRenameText] = useState("");
+  // When true, the keybinding cheat-sheet takes over the screen until any key is
+  // pressed. Toggled with `?`.
+  const [showHelp, setShowHelp] = useState(false);
   // Ticks once a second while an agent is running so live runtime badges
   // advance; `now` is read by the list/detail components for elapsed time.
   const [now, setNow] = useState(() => Date.now());
@@ -244,6 +253,23 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
+  const doClone = useCallback(
+    async (ws: Workspace | undefined) => {
+      if (!ws) return;
+      flash(`cloning ${ws.title}…`);
+      try {
+        const clone = await manager.cloneWorkspace(ws.id);
+        if (clone) {
+          setSelectedId(clone.id);
+          flash(`cloned ${ws.title} → ${clone.title}`);
+        }
+      } catch (err) {
+        flash(`clone failed: ${err instanceof Error ? err.message : err}`);
+      }
+    },
+    [manager, flash],
+  );
+
   const doArchive = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -261,6 +287,33 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   useInput(
     (input, key) => {
       setMessage(undefined);
+
+      // The help cheat-sheet is a modal: while it's up, any key dismisses it and
+      // nothing else fires.
+      if (showHelp) {
+        setShowHelp(false);
+        return;
+      }
+
+      // While the rename box is open it owns the keyboard, same as the filter
+      // box: type to edit the title, Enter to commit, Esc to abandon the edit.
+      if (renaming) {
+        if (key.escape) {
+          setRenaming(false);
+          setRenameText("");
+        } else if (key.return) {
+          if (current && manager.renameWorkspace(current.id, renameText)) {
+            flash(`renamed to ${renameText.trim()}`);
+          }
+          setRenaming(false);
+          setRenameText("");
+        } else if (key.backspace || key.delete) {
+          setRenameText((t) => t.slice(0, -1));
+        } else if (input && !key.ctrl && !key.meta) {
+          setRenameText((t) => t + input);
+        }
+        return;
+      }
 
       // While the filter box is open it owns the keyboard: type to narrow the
       // list, Enter to apply and return to navigation (the query stays active),
@@ -343,6 +396,23 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           }
           return;
         }
+        if (input === "e") {
+          if (current) {
+            setRenameText(current.title);
+            setRenaming(true);
+          } else {
+            flash("no workspace to rename");
+          }
+          return;
+        }
+        if (input === "C") {
+          void doClone(current);
+          return;
+        }
+        if (input === "?") {
+          setShowHelp(true);
+          return;
+        }
       }
 
       if (mode === "list") {
@@ -413,6 +483,10 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     { isActive: mode !== "new" && !composing },
   );
 
+  if (showHelp) {
+    return <HelpOverlay height={size.rows} />;
+  }
+
   if (mode === "new") {
     return (
       <NewWorkspaceForm
@@ -465,6 +539,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         usage={sessionUsage}
         filtering={filtering}
         filter={filter}
+        renaming={renaming}
+        renameText={renameText}
       />
     </Box>
   );

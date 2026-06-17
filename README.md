@@ -92,6 +92,8 @@ pnpm start ../my-repo   # or point at another repo
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
 | `/`                | filter the list by title (↵ apply · esc clear) |
+| `e`                | rename the workspace title (↵ save · esc cancel) |
+| `C`                | clone — re-run this prompt in a fresh worktree |
 | `c`                | jump into a shell in the workspace's worktree  |
 | `m`                | merge selected workspace into the base branch  |
 | `s`                | stop the running agent                         |
@@ -99,6 +101,7 @@ pnpm start ../my-repo   # or point at another repo
 | `R`                | restart the agent in the existing worktree     |
 | `x`                | archive (stop agent, remove worktree + branch) |
 | `y` / `n`          | allow / deny a pending permission request      |
+| `?`                | toggle the keybinding help overlay             |
 | `q`                | quit                                           |
 
 **Detail**
@@ -109,11 +112,14 @@ pnpm start ../my-repo   # or point at another repo
 | `d`                | diff view                         |
 | `c`                | shell in the worktree             |
 | `i`                | reply to the agent (answer a Q)   |
+| `e`                | rename the workspace title        |
+| `C`                | clone — re-run this prompt fresh  |
 | `y` / `n`          | allow / deny a permission request |
 | `S`                | ask the agent to build a skill    |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff                   |
 | `R`                | restart the agent                 |
 | `r`                | refresh the diff                  |
+| `?`                | toggle the keybinding help overlay |
 | `esc`              | back to the list                  |
 
 ## Answering the agent
