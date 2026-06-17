@@ -51,14 +51,24 @@ async function onPath(bin: string): Promise<boolean> {
  *
  * Permissions: runs in acceptEdits mode, so edits to files in the isolated
  * worktree are auto-approved (the whole point of the worktree is that they're
- * safe to make), but any other tool — running a shell command, fetching a URL —
- * still needs approval. Rather than silently failing in this headless mode,
- * the CLI emits those requests over the same stdout stream as `control_request`
- * messages; we surface them to the user (see {@link AgentBackend.parseControl})
- * and write the decision back over stdin (see {@link encodePermission}). This
- * is the SDK "control protocol"; the request/response field names below are the
- * one Claude-specific detail to re-check if a CLI upgrade changes the wire
- * format and prompts stop appearing.
+ * safe to make). Other tools — running a shell command, fetching a URL — would
+ * need approval, but in this headless (`-p`) mode the CLI can't actually prompt:
+ * with no terminal attached it just denies the tool ("requires approval"), and
+ * no `can_use_tool` request reaches us to surface as a y/n prompt. So if you
+ * need the agent to run arbitrary commands, use the {@link claudeAllPerms}
+ * backend below ("Claude Code (all perms)"), which bypasses permission checks
+ * entirely and trusts the worktree + merge review as the safety boundary.
+ *
+ * Override the mode with CONDUCT_CLAUDE_PERMISSION_MODE (`acceptEdits`,
+ * `default`, `plan`, `dontAsk`, `auto`, `bypassPermissions`). Pair `acceptEdits`
+ * with an `--allowedTools` allowlist via CONDUCT_CLAUDE_ARGS to whitelist the
+ * specific commands the agent may run without a prompt. CONDUCT_CLAUDE_ARGS
+ * appends extra flags either way.
+ *
+ * The control-protocol plumbing below (parseControl / encodePermission and the
+ * y/n UI it feeds) is kept: if a CLI version does route `can_use_tool` requests
+ * to us over stdout, we still surface them. It's just not relied upon today,
+ * because this CLI version doesn't emit them in headless mode.
  */
 const claude: AgentBackend = {
   id: "claude",
@@ -68,6 +78,8 @@ const claude: AgentBackend = {
     const extra = (process.env.CONDUCT_CLAUDE_ARGS ?? "")
       .split(" ")
       .filter(Boolean);
+    const permissionMode =
+      process.env.CONDUCT_CLAUDE_PERMISSION_MODE?.trim() || "acceptEdits";
     return {
       cmd: "claude",
       // No positional prompt: in stream-json input mode the prompt (and every
@@ -80,7 +92,7 @@ const claude: AgentBackend = {
         "stream-json",
         "--verbose",
         "--permission-mode",
-        "acceptEdits",
+        permissionMode,
         ...extra,
       ],
     };
@@ -223,6 +235,45 @@ const claude: AgentBackend = {
   },
 };
 
+/**
+ * Claude Code with all permission checks bypassed. Identical to {@link claude}
+ * in every respect (same stream-json session, control-protocol plumbing, output
+ * parsing) except the spawn flags: it adds `--dangerously-skip-permissions`, so
+ * the agent can run shell commands, fetch URLs, etc. without any approval. This
+ * is the option to pick when a task needs real command execution (installing
+ * deps, running builds/tests) — the plain "Claude Code" backend can't prompt for
+ * those in headless mode and will just deny them.
+ *
+ * The safety model is the worktree: the agent is confined to its own isolated
+ * git worktree and nothing reaches your real branch until you review the diff
+ * and merge. Note this isolates the git tree, not the whole machine — a bypassed
+ * agent can still touch the network and files outside the worktree, so choose it
+ * deliberately. CONDUCT_CLAUDE_ARGS still appends extra flags here too.
+ */
+const claudeAllPerms: AgentBackend = {
+  ...claude,
+  id: "claude-all",
+  displayName: "Claude Code (all perms)",
+  buildCommand() {
+    const extra = (process.env.CONDUCT_CLAUDE_ARGS ?? "")
+      .split(" ")
+      .filter(Boolean);
+    return {
+      cmd: "claude",
+      args: [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--dangerously-skip-permissions",
+        ...extra,
+      ],
+    };
+  },
+};
+
 /** OpenAI Codex CLI, non-interactive. Output is already human-readable. */
 const codex: AgentBackend = {
   id: "codex",
@@ -314,7 +365,7 @@ const mock: AgentBackend = {
   },
 };
 
-const REGISTRY: AgentBackend[] = [claude, codex, opencode, mock];
+const REGISTRY: AgentBackend[] = [claude, claudeAllPerms, codex, opencode, mock];
 
 export function listAgents(): AgentBackend[] {
   return REGISTRY;
