@@ -1,0 +1,98 @@
+# conduct
+
+A terminal orchestrator for running multiple coding agents in parallel, each in
+its own isolated **git worktree**. A small, local, open clone of
+[Conductor](https://www.conductor.build/) as a TUI.
+
+Point it at a git repo, spin up N **workspaces** from a single prompt each, watch
+the agents work live, then review each one's diff and merge the ones you like.
+
+## How it works
+
+Each workspace is:
+
+1. a fresh **git worktree** + branch (`conduct/<slug>-<id>`) created from your
+   current branch, checked out under `~/.conduct/worktrees/<repo>/`,
+2. a coding-agent process spawned in that worktree, with output streamed live,
+3. reviewable as a unified **diff** against the base branch (untracked files
+   included), and mergeable back with one keystroke (it auto-commits any pending
+   work, then `git merge --no-ff`).
+
+Because every workspace is a separate worktree, agents never collide on the
+working tree, and nothing touches your main checkout until you merge.
+
+## Requirements
+
+- Node 22+ and pnpm (provided by the devenv shell here)
+- git
+- At least one agent CLI on your `PATH`:
+  - [`claude`](https://docs.claude.com/en/docs/claude-code) (Claude Code)
+  - [`codex`](https://github.com/openai/codex) (Codex CLI)
+  - a built-in `mock` agent is always available for testing without API tokens
+
+## Run
+
+```bash
+pnpm install        # first time (approve the esbuild build script if prompted)
+pnpm start          # orchestrate the current directory's repo
+pnpm start ../my-repo   # or point at another repo
+# or, after `pnpm link --global`:  conduct [repo]
+```
+
+## Keys
+
+**List**
+
+| key                | action                                         |
+| ------------------ | ---------------------------------------------- |
+| `n`                | new workspace (pick agent, prompt, title)      |
+| `↑`/`↓` or `k`/`j` | move selection                                 |
+| `↵`                | open workspace (live output)                   |
+| `d`                | open workspace on the diff view                |
+| `m`                | merge selected workspace into the base branch  |
+| `s`                | stop the running agent                         |
+| `x`                | archive (stop agent, remove worktree + branch) |
+| `q`                | quit                                           |
+
+**Detail**
+
+| key                | action                   |
+| ------------------ | ------------------------ |
+| `o` / `↵`          | output view (tails live) |
+| `d`                | diff view                |
+| `↑`/`↓`, PgUp/PgDn | scroll the diff          |
+| `r`                | refresh the diff         |
+| `esc`              | back to the list         |
+
+## Agent flags
+
+Pass extra CLI flags via env vars:
+
+```bash
+CONDUCT_CLAUDE_ARGS="--model claude-opus-4-8" pnpm start
+CONDUCT_CODEX_ARGS="--full-auto" pnpm start
+```
+
+Claude Code runs headless with `--permission-mode acceptEdits` so it can edit
+files in the isolated worktree without blocking on prompts.
+
+## Layout
+
+```
+src/
+  core/
+    types.ts     workspace + agent-backend types
+    git.ts       worktree / diff / merge helpers
+    agents.ts    agent registry (claude, codex, mock)
+    manager.ts   orchestrator: spawns agents, streams output, merges
+  tui/
+    App.tsx      Ink app + keybindings
+    components/  list, detail pane, new-workspace form, status bar
+  index.tsx      entrypoint
+```
+
+## Not yet (possible next steps)
+
+Session persistence across restarts, multi-repo, per-workspace terminals,
+conflict-aware merge UI, and a richer diff browser. The core is structured so
+these slot in around `WorkspaceManager`.
