@@ -30,7 +30,7 @@ branches `conduct` creates are never orphaned. On reload:
 
 - a workspace whose agent was still running is shown as `stopped` (the process
   does not survive a restart, but its worktree and work are intact and still
-  reviewable / mergeable),
+  reviewable / mergeable, and the agent can be resumed with `R`),
 - a workspace whose worktree has since been removed on disk is dropped from the
   list.
 
@@ -64,6 +64,7 @@ pnpm start ../my-repo   # or point at another repo
 | `d`                | open workspace on the diff view                |
 | `m`                | merge selected workspace into the base branch  |
 | `s`                | stop the running agent                         |
+| `R`                | restart the agent in the existing worktree     |
 | `x`                | archive (stop agent, remove worktree + branch) |
 | `q`                | quit                                           |
 
@@ -74,6 +75,7 @@ pnpm start ../my-repo   # or point at another repo
 | `o` / `↵`          | output view (tails live) |
 | `d`                | diff view                |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff          |
+| `R`                | restart the agent        |
 | `r`                | refresh the diff         |
 | `esc`              | back to the list         |
 
