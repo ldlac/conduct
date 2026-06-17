@@ -3,7 +3,7 @@ import { Box, useApp, useInput, useStdout } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { Workspace } from "../core/types.js";
 import { WorkspaceList } from "./components/WorkspaceList.js";
-import { DetailPane } from "./components/DetailPane.js";
+import { DetailPane, detailBodyHeight } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
 import {
   NewWorkspaceForm,
@@ -28,6 +28,9 @@ export function App({ manager, agents }: Props) {
   const [view, setView] = useState<View>("output");
   const [diff, setDiff] = useState("");
   const [scroll, setScroll] = useState(0);
+  // Output streams live, so by default the pane follows the tail. Scrolling up
+  // pins the view; scrolling back to the bottom re-enables following.
+  const [followTail, setFollowTail] = useState(true);
   const [message, setMessage] = useState<string | undefined>();
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
@@ -57,6 +60,20 @@ export function App({ manager, agents }: Props) {
   }, [stdout]);
 
   const current = items[selected];
+
+  // Scroll geometry, shared by the key handler and the render so they agree on
+  // the bounds. `bodyHeight` mirrors the value handed to the panes below.
+  const bodyHeight = Math.max(8, size.rows - 4);
+  const viewportRows = detailBodyHeight(bodyHeight, composing);
+  const totalLines =
+    view === "diff"
+      ? diff
+        ? diff.split("\n").length
+        : 1
+      : (current?.output.length ?? 1);
+  const maxScroll = Math.max(0, totalLines - viewportRows);
+  // While following, the conceptual top is the bottom of the buffer.
+  const topNow = view === "output" && followTail ? maxScroll : Math.min(scroll, maxScroll);
 
   const flash = useCallback((msg: string) => {
     setMessage(msg);
@@ -169,6 +186,7 @@ export function App({ manager, agents }: Props) {
         else if (key.return) {
           setMode("detail");
           setView("output");
+          setFollowTail(true);
         } else if (input === "d") {
           setMode("detail");
           setView("diff");
@@ -194,6 +212,7 @@ export function App({ manager, agents }: Props) {
         }
         if (input === "o" || key.return) {
           setView("output");
+          setFollowTail(true);
           return;
         }
         if (input === "d") {
@@ -205,12 +224,17 @@ export function App({ manager, agents }: Props) {
           void loadDiff(current);
           return;
         }
-        if (view === "diff") {
-          if (key.upArrow || input === "k")
-            setScroll((s) => Math.max(0, s - 1));
-          else if (key.downArrow || input === "j") setScroll((s) => s + 1);
-          else if (key.pageDown) setScroll((s) => s + 10);
-          else if (key.pageUp) setScroll((s) => Math.max(0, s - 10));
+        // Both views scroll; the output view additionally re-follows the tail
+        // once the user scrolls back to the bottom.
+        let next: number | undefined;
+        if (key.upArrow || input === "k") next = topNow - 1;
+        else if (key.downArrow || input === "j") next = topNow + 1;
+        else if (key.pageUp) next = topNow - 10;
+        else if (key.pageDown) next = topNow + 10;
+        if (next !== undefined) {
+          const clamped = Math.max(0, Math.min(maxScroll, next));
+          setScroll(clamped);
+          if (view === "output") setFollowTail(clamped >= maxScroll);
         }
         return;
       }
@@ -233,7 +257,6 @@ export function App({ manager, agents }: Props) {
     );
   }
 
-  const bodyHeight = Math.max(8, size.rows - 4);
   const listWidth = Math.min(40, Math.floor(size.cols * 0.35));
   const detailWidth = size.cols - listWidth - 2;
 
@@ -249,7 +272,7 @@ export function App({ manager, agents }: Props) {
           ws={current}
           view={view}
           diff={diff}
-          scroll={scroll}
+          scroll={topNow}
           width={detailWidth}
           height={bodyHeight}
           composing={composing}
