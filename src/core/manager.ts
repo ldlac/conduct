@@ -7,9 +7,12 @@ import fs from "node:fs/promises";
 
 import { Git } from "./git.js";
 import { getAgent } from "./agents.js";
+import { loadState, saveState, saveStateSync } from "./store.js";
 import type { Workspace } from "./types.js";
 
 const MAX_OUTPUT_LINES = 2000;
+/** Debounce window for background state saves during normal operation. */
+const SAVE_DEBOUNCE_MS = 500;
 
 function slugify(s: string): string {
   return (
@@ -41,6 +44,7 @@ export interface CreateOptions {
 export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, Workspace>();
   private procs = new Map<string, ChildProcess>();
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
   readonly workspacesRoot: string;
 
   private constructor(
@@ -74,7 +78,28 @@ export class WorkspaceManager extends EventEmitter {
     const baseBranch = await git.currentBranch();
     const mgr = new WorkspaceManager(git, baseBranch);
     await fs.mkdir(mgr.workspacesRoot, { recursive: true });
+    await mgr.restore();
     return mgr;
+  }
+
+  /**
+   * Reload workspaces persisted by a previous session. Agent processes don't
+   * survive a restart, so anything that was mid-run is marked `stopped`; any
+   * workspace whose worktree has since been removed on disk is dropped.
+   */
+  private async restore(): Promise<void> {
+    const saved = await loadState(this.workspacesRoot);
+    for (const ws of saved) {
+      if (ws.status === "archived") continue;
+      if (ws.path && ws.status !== "merged" && !(await pathExists(ws.path))) {
+        continue;
+      }
+      if (ws.status === "creating" || ws.status === "running") {
+        ws.status = "stopped";
+      }
+      this.workspaces.set(ws.id, ws);
+    }
+    if (this.workspaces.size > 0) this.touch();
   }
 
   snapshot(): Workspace[] {
@@ -89,6 +114,20 @@ export class WorkspaceManager extends EventEmitter {
 
   private touch(): void {
     this.emit("update");
+    this.scheduleSave();
+  }
+
+  /** Persist the workspace list at most once per debounce window. */
+  private scheduleSave(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void saveState(this.workspacesRoot, this.baseBranch, this.snapshot()).catch(
+        () => {
+          /* best-effort: a failed background save is retried on the next change */
+        },
+      );
+    }, SAVE_DEBOUNCE_MS);
   }
 
   private append(ws: Workspace, text: string): void {
@@ -231,8 +270,26 @@ export class WorkspaceManager extends EventEmitter {
     this.touch();
   }
 
-  /** Kill every running agent (used on quit). */
+  /** Kill every running agent and flush state synchronously (used on quit). */
   shutdown(): void {
     for (const child of this.procs.values()) child.kill("SIGTERM");
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    try {
+      saveStateSync(this.workspacesRoot, this.baseBranch, this.snapshot());
+    } catch {
+      /* nothing useful to do as the process is exiting */
+    }
+  }
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
   }
 }

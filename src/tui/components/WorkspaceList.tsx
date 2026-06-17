@@ -10,6 +10,7 @@ const COLORS: Record<Workspace["status"], string> = {
   error: "red",
   merged: "magenta",
   archived: "gray",
+  stopped: "yellow",
 };
 
 function StatusIcon({ status }: { status: Workspace["status"] }) {
@@ -21,7 +22,9 @@ function StatusIcon({ status }: { status: Workspace["status"] }) {
     );
   }
   const glyph =
-    { done: "✓", error: "✗", merged: "⇄", archived: "·" }[status] ?? "?";
+    { done: "✓", error: "✗", merged: "⇄", archived: "·", stopped: "◼" }[
+      status
+    ] ?? "?";
   return <Text color={COLORS[status]}>{glyph}</Text>;
 }
 
