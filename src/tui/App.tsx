@@ -492,11 +492,22 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       <NewWorkspaceForm
         agents={agents}
         onCancel={() => setMode("list")}
-        onSubmit={async ({ title, prompt, agentId }) => {
+        onSubmit={async ({ title, prompt, agentId, count }) => {
           setMode("list");
-          flash(`launching ${agentId}…`);
-          const ws = await manager.createWorkspace({ title, prompt, agentId });
-          setSelectedId(ws.id);
+          flash(
+            count > 1
+              ? `launching ${count} × ${agentId}…`
+              : `launching ${agentId}…`,
+          );
+          const created = await manager.createWorkspaces({
+            title,
+            prompt,
+            agentId,
+            count,
+          });
+          // Land the cursor on the first of the batch so the user sees the
+          // fan-out start streaming right away.
+          if (created[0]) setSelectedId(created[0].id);
         }}
       />
     );

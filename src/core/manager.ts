@@ -13,6 +13,14 @@ import type { AttentionReason, TokenUsage, Workspace } from "./types.js";
 const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
 const SAVE_DEBOUNCE_MS = 500;
+/**
+ * Upper bound on a single fan-out (see {@link WorkspaceManager.createWorkspaces}).
+ * Each workspace is a real worktree plus a live agent process, so spinning up an
+ * unbounded number from one keystroke would thrash the disk and the machine;
+ * this caps a deliberate "try the same prompt N ways" into a sane range. The
+ * form clamps to the same value, so the user never picks more than this.
+ */
+export const MAX_FANOUT = 8;
 
 function slugify(s: string): string {
   return (
@@ -187,6 +195,38 @@ export class WorkspaceManager extends EventEmitter {
 
     this.startAgent(ws);
     return ws;
+  }
+
+  /**
+   * Fan one prompt out into `count` independent workspaces — the app's core
+   * "race the same task N ways" move, done in a single step instead of cloning
+   * after the fact. Each gets its own worktree, branch, and agent process (every
+   * worktree/branch already carries a unique id, so they never collide), and a
+   * disambiguated title (`Fix login (1/3)`, `(2/3)`, …) so identical attempts
+   * stay tellable apart in the list. `count` is clamped to [1, {@link MAX_FANOUT}].
+   *
+   * Worktrees are created sequentially because `git worktree add` locks the
+   * repo's worktree metadata — racing several `add`s off the same repo can fail
+   * — but the agents themselves run in parallel once spawned, which is the whole
+   * point. Returns the created workspaces in order; with `count` of 1 it's just
+   * a one-element fan-out, identical to {@link createWorkspace}.
+   */
+  async createWorkspaces(
+    opts: CreateOptions & { count?: number },
+  ): Promise<Workspace[]> {
+    const count = Math.max(1, Math.min(MAX_FANOUT, Math.floor(opts.count ?? 1)));
+    if (count === 1) return [await this.createWorkspace(opts)];
+    const base = opts.title || opts.prompt.slice(0, 40);
+    const created: Workspace[] = [];
+    for (let i = 0; i < count; i++) {
+      created.push(
+        await this.createWorkspace({
+          ...opts,
+          title: `${base} (${i + 1}/${count})`,
+        }),
+      );
+    }
+    return created;
   }
 
   private startAgent(ws: Workspace): void {
