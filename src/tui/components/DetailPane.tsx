@@ -148,8 +148,15 @@ export function DetailPane({
             <DiffStatBadge stat={ws.stat} />
           </Text>
         )}
-        {ws.awaitingInput && !composing && (
-          <Text color="yellow"> · awaiting input (i to reply)</Text>
+        {ws.pendingPermission ? (
+          <Text color="yellow" bold>
+            {" · "}⏸ allow {ws.pendingPermission.toolName}? (y/n)
+          </Text>
+        ) : (
+          ws.awaitingInput &&
+          !composing && (
+            <Text color="yellow"> · awaiting input (i to reply)</Text>
+          )
         )}
       </Text>
       <Text dimColor>

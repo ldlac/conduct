@@ -98,6 +98,9 @@ export class WorkspaceManager extends EventEmitter {
         ws.status = "stopped";
       }
       ws.awaitingInput = false;
+      // The agent process didn't survive the restart, so any permission it was
+      // blocked on is stale — there's no one to answer.
+      ws.pendingPermission = undefined;
       this.workspaces.set(ws.id, ws);
     }
     if (this.workspaces.size > 0) this.touch();
@@ -178,6 +181,7 @@ export class WorkspaceManager extends EventEmitter {
     const interactive = typeof agent.encodeInput === "function";
     ws.status = "running";
     ws.awaitingInput = false;
+    ws.pendingPermission = undefined;
     this.append(
       ws,
       `$ ${cmd} ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`,
@@ -207,6 +211,24 @@ export class WorkspaceManager extends EventEmitter {
     }
 
     const onLine = (raw: string) => {
+      // Out-of-band control messages (permission requests, protocol acks) are
+      // interleaved with normal output on the same stdout stream. Classify and
+      // handle them first; they are not turn boundaries or displayable output.
+      const control = agent.parseControl?.(raw);
+      if (control) {
+        if (control.kind === "ack") {
+          child.stdin?.write(control.reply);
+        } else {
+          // The agent paused to ask permission for a tool. Park the workspace
+          // on the request so the UI can prompt; the agent stays alive but
+          // blocked until we answer (see respondPermission). Record it in the
+          // transcript too, so the request — and the command it wants to run —
+          // is visible in the output view, not just the header.
+          ws.pendingPermission = control.request;
+          this.append(ws, `⏸ permission requested — ${control.request.summary}`);
+        }
+        return;
+      }
       // An interactive session stays alive between turns, so the process being
       // up no longer means the agent is busy. When a turn ends, flip the idle
       // workspace to `done` (it lands in "Ready to review" and can be merged
@@ -243,6 +265,8 @@ export class WorkspaceManager extends EventEmitter {
     child.on("close", (code) => {
       ws.exitCode = code ?? 0;
       ws.awaitingInput = false;
+      // A request from a process that's now gone can never be answered.
+      ws.pendingPermission = undefined;
       if (ws.status === "running") ws.status = code === 0 ? "done" : "error";
       this.procs.delete(ws.id);
       void this.refreshStat(ws);
@@ -306,6 +330,28 @@ export class WorkspaceManager extends EventEmitter {
     // the turn (see onLine), so reflect that unless it's already terminal.
     if (ws.status === "done" || ws.status === "stopped") ws.status = "running";
     this.append(ws, `❯ ${text}`);
+    return true;
+  }
+
+  /**
+   * Answer a pending tool-permission request (see
+   * {@link Workspace.pendingPermission}): write the user's allow/deny decision
+   * to the agent's stdin so it can run — or skip — the tool and continue the
+   * turn. Returns false if there's nothing to answer or the agent can't take
+   * the response.
+   */
+  respondPermission(id: string, allow: boolean): boolean {
+    const child = this.procs.get(id);
+    const ws = this.workspaces.get(id);
+    if (!ws?.pendingPermission || !child?.stdin?.writable) return false;
+    const agent = getAgent(ws.agentId);
+    if (!agent.encodePermission) return false;
+    const req = ws.pendingPermission;
+    child.stdin.write(agent.encodePermission(req, allow));
+    // Clear before appending so the single resulting update carries both the
+    // resolved state and the transcript line.
+    ws.pendingPermission = undefined;
+    this.append(ws, allow ? `✓ allowed ${req.toolName}` : `✗ denied ${req.toolName}`);
     return true;
   }
 

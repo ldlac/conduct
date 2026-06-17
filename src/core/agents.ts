@@ -1,5 +1,5 @@
 import { run } from "./git.js";
-import type { AgentBackend } from "./types.js";
+import type { AgentBackend, PermissionRequest } from "./types.js";
 
 /**
  * Heuristic for "the agent's final message asked the user something". Looks at
@@ -11,6 +11,23 @@ function endsWithQuestion(text: unknown): boolean {
   if (typeof text !== "string") return false;
   const tail = text.trimEnd().replace(/[)\]"'`*_>]+$/, "").trimEnd();
   return tail.endsWith("?");
+}
+
+/**
+ * Condense a tool-use request into one human line for the permission prompt.
+ * Pulls the field that carries the gist of common tools (the command for Bash,
+ * the URL for a fetch, the path for a file op) and falls back to just the tool
+ * name when the input shape is unfamiliar.
+ */
+function summarizeToolUse(tool: string, input: unknown): string {
+  if (input && typeof input === "object") {
+    const o = input as Record<string, unknown>;
+    for (const key of ["command", "url", "file_path", "path", "pattern"]) {
+      const v = o[key];
+      if (typeof v === "string" && v) return `${tool}: ${v}`;
+    }
+  }
+  return tool;
 }
 
 /** Cache of `which <bin>` lookups. */
@@ -30,8 +47,18 @@ async function onPath(bin: string): Promise<boolean> {
  * readable lines, while the initial prompt and any later replies stream in over
  * stdin as JSON user messages. Keeping stdin open is what lets you answer
  * questions the agent asks and continue the conversation; the process stays
- * alive between turns rather than exiting after one. Runs with acceptEdits so
- * it can edit files in the isolated worktree without blocking on prompts.
+ * alive between turns rather than exiting after one.
+ *
+ * Permissions: runs in acceptEdits mode, so edits to files in the isolated
+ * worktree are auto-approved (the whole point of the worktree is that they're
+ * safe to make), but any other tool — running a shell command, fetching a URL —
+ * still needs approval. Rather than silently failing in this headless mode,
+ * the CLI emits those requests over the same stdout stream as `control_request`
+ * messages; we surface them to the user (see {@link AgentBackend.parseControl})
+ * and write the decision back over stdin (see {@link encodePermission}). This
+ * is the SDK "control protocol"; the request/response field names below are the
+ * one Claude-specific detail to re-check if a CLI upgrade changes the wire
+ * format and prompts stop appearing.
  */
 const claude: AgentBackend = {
   id: "claude",
@@ -63,6 +90,54 @@ const claude: AgentBackend = {
       JSON.stringify({
         type: "user",
         message: { role: "user", content: [{ type: "text", text }] },
+      }) + "\n"
+    );
+  },
+  parseControl(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let evt: any;
+    try {
+      evt = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+    // Only control_request messages are out-of-band; everything else (assistant
+    // text, tool_use, result, …) is normal output handled by parseLine.
+    if (evt.type !== "control_request") return null;
+    const id = String(evt.request_id ?? evt.requestId ?? "");
+    const req = evt.request ?? {};
+    if (req.subtype === "can_use_tool") {
+      const toolName = String(req.tool_name ?? req.toolName ?? "tool");
+      const input = req.input;
+      return {
+        kind: "permission",
+        request: { id, toolName, input, summary: summarizeToolUse(toolName, input) },
+      };
+    }
+    // Some other control request the CLI may open mid-session (an init or
+    // capability handshake). The user has nothing to decide here, so reply with
+    // a bare success to keep the session moving rather than leaving the CLI
+    // blocked waiting on a response we'd otherwise never send.
+    return {
+      kind: "ack",
+      reply:
+        JSON.stringify({
+          type: "control_response",
+          response: { subtype: "success", request_id: id, response: {} },
+        }) + "\n",
+    };
+  },
+  encodePermission(req: PermissionRequest, allow) {
+    // Echo the original input back on allow so the agent runs exactly what it
+    // asked to; on deny, a short reason the agent can relay or work around.
+    const response = allow
+      ? { behavior: "allow", updatedInput: req.input ?? {} }
+      : { behavior: "deny", message: "Denied by the user in conduct." };
+    return (
+      JSON.stringify({
+        type: "control_response",
+        response: { subtype: "success", request_id: req.id, response },
       }) + "\n"
     );
   },

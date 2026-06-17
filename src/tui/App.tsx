@@ -197,6 +197,20 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       setMessage(undefined);
 
       if (mode === "list" || mode === "detail") {
+        // A pending permission request blocks the selected agent, so answering
+        // it takes precedence over the normal bindings: y allows, n denies.
+        // (n is otherwise "new workspace"; while a prompt is up it means deny,
+        // matching the y/n hint shown on the workspace.)
+        if (current?.pendingPermission) {
+          if (input === "y" || input === "n") {
+            const allow = input === "y";
+            const tool = current.pendingPermission.toolName;
+            if (manager.respondPermission(current.id, allow)) {
+              flash(`${allow ? "allowed" : "denied"} ${tool}`);
+            }
+            return;
+          }
+        }
         if (input === "q" || (key.ctrl && input === "c")) {
           manager.shutdown();
           exit();
