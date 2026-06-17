@@ -82,6 +82,16 @@ const claude: AgentBackend = {
     if (evt.type !== "result") return false;
     return endsWithQuestion(evt.result);
   },
+  turnEnded(line) {
+    // Every turn — question or not — ends on a `result` event.
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    try {
+      return JSON.parse(trimmed).type === "result";
+    } catch {
+      return false;
+    }
+  },
   parseLine(line) {
     const trimmed = line.trim();
     if (!trimmed) return null;
@@ -157,6 +167,11 @@ const mock: AgentBackend = {
   },
   awaitsReply(line) {
     return line.trim() === "@@await@@";
+  },
+  turnEnded(line) {
+    // Both sentinels close a turn; only @@await@@ also awaits a reply.
+    const t = line.trim();
+    return t === "@@await@@" || t === "@@done@@";
   },
   parseLine(line) {
     // Hide the internal turn-end sentinels from the output view.

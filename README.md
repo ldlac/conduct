@@ -91,8 +91,11 @@ When an agent ends a turn by asking a question the detail header shows
 this (the agent isn't waiting on you), but the session stays alive so you can
 still press `i` to steer it further.
 
-Because the session stays alive across turns, an interactive agent keeps the
-`running` status until you stop it (`s`) — stop it before merging, as before.
+The session stays alive across turns so you can keep steering it, but the
+workspace no longer shows `running` the whole time: when a turn ends the agent
+goes idle and the workspace flips to `done` (it moves to "Ready to review"), and
+your next reply flips it back to `running`. You can merge straight from `done`;
+merging shuts the idle session down for you, so there's no need to stop it first.
 
 ## Agent flags
 

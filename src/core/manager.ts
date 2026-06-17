@@ -207,14 +207,21 @@ export class WorkspaceManager extends EventEmitter {
     }
 
     const onLine = (raw: string) => {
-      // Only flag "awaiting input" when the agent ended its turn by asking
-      // something. A turn that merely finished the job leaves the session idle
-      // but doesn't nag the user for a reply.
-      const awaitsReply = interactive && agent.awaitsReply?.(raw);
-      if (awaitsReply) ws.awaitingInput = true;
+      // An interactive session stays alive between turns, so the process being
+      // up no longer means the agent is busy. When a turn ends, flip the idle
+      // workspace to `done` (it lands in "Ready to review" and can be merged
+      // without a manual stop); a later reply flips it back to `running` (see
+      // sendInput). Only flag "awaiting input" when that turn ended on a
+      // question — a turn that merely finished the job shouldn't nag for input.
+      let changed = false;
+      if (interactive && agent.turnEnded?.(raw)) {
+        ws.awaitingInput = agent.awaitsReply?.(raw) ?? false;
+        if (ws.status === "running") ws.status = "done";
+        changed = true;
+      }
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
       if (pretty != null) this.append(ws, pretty);
-      else if (awaitsReply) this.touch();
+      else if (changed) this.touch();
     };
     if (child.stdout)
       readline.createInterface({ input: child.stdout }).on("line", onLine);
@@ -265,6 +272,9 @@ export class WorkspaceManager extends EventEmitter {
     if (!agent.encodeInput) return false;
     child.stdin.write(agent.encodeInput(text));
     ws.awaitingInput = false;
+    // A reply kicks off a new turn: the agent is working again until it ends
+    // the turn (see onLine), so reflect that unless it's already terminal.
+    if (ws.status === "done" || ws.status === "stopped") ws.status = "running";
     this.append(ws, `❯ ${text}`);
     return true;
   }
@@ -306,8 +316,13 @@ export class WorkspaceManager extends EventEmitter {
   async merge(id: string): Promise<void> {
     const ws = this.workspaces.get(id);
     if (!ws) throw new Error("No such workspace");
-    if (this.isRunning(id))
-      throw new Error("Agent is still running — stop it first");
+    if (ws.status === "running")
+      throw new Error("Agent is still working — wait for it to finish or stop it");
+    // An interactive session can still be alive but idle (status `done`): the
+    // turn is over and the worktree has settled, so it's safe to merge. Shut
+    // the lingering process down first so no agent keeps running against a
+    // workspace that's now merged.
+    if (this.isRunning(id)) this.stop(id);
 
     await this.git.commitAll(ws.path, `conduct: ${ws.title}`);
     await this.git.merge(ws.branch, `Merge conduct workspace: ${ws.title}`);

@@ -65,4 +65,13 @@ export interface AgentBackend {
    * false: the session stays alive, but the UI should not prompt for input.
    */
   awaitsReply?(line: string): boolean;
+  /**
+   * For interactive agents: does this raw stdout line mark the end of a turn —
+   * the agent going idle, whether it asked a question or simply finished the
+   * job? The session process stays alive between turns, so this is how the
+   * manager knows the agent is no longer actively working and can flip the
+   * workspace to `done` (ready to review/merge). A superset of
+   * {@link awaitsReply}: every reply-awaiting line also ends a turn.
+   */
+  turnEnded?(line: string): boolean;
 }
