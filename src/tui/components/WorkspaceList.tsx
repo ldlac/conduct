@@ -1,13 +1,57 @@
 import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { DiffStat, Workspace, WorkspaceStatus } from "../../core/types.js";
+import type {
+  DiffStat,
+  TokenUsage,
+  Workspace,
+  WorkspaceStatus,
+} from "../../core/types.js";
 
 /** Plain-text form of a diff stat (`+120 -8`), or "" when there's nothing to
  * show. Used both to size list rows and as the basis for the colored badge. */
 export function statText(stat: DiffStat | undefined): string {
   if (!stat || stat.files === 0) return "";
   return `+${stat.insertions} -${stat.deletions}`;
+}
+
+/** Every token the session touched — input, output, and both cache flavours. */
+export function totalTokens(usage: TokenUsage): number {
+  return (
+    usage.inputTokens +
+    usage.outputTokens +
+    usage.cacheReadTokens +
+    usage.cacheCreationTokens
+  );
+}
+
+/** Compact a token count: 1530 → "1.5k", 2_300_000 → "2.3M". */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Dollar cost with enough precision to stay meaningful for cheap sessions. */
+export function formatCost(usd: number): string {
+  if (usd <= 0) return "$0";
+  if (usd < 0.01) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+/** Compact one-line usage summary (`1.5k $0.27`), or "" when there's nothing
+ * to show. Used to size list rows and render the dim usage badge. */
+export function usageText(usage: TokenUsage | undefined): string {
+  if (!usage) return "";
+  const tokens = totalTokens(usage);
+  if (tokens === 0 && usage.costUsd === 0) return "";
+  return `${formatTokens(tokens)} ${formatCost(usage.costUsd)}`;
+}
+
+/** Dim token/cost badge for a workspace row. Renders nothing without usage. */
+export function UsageBadge({ usage }: { usage: TokenUsage | undefined }) {
+  const text = usageText(usage);
+  return text ? <Text dimColor>{text}</Text> : null;
 }
 
 /** GitHub-style colored diff stat: green insertions, red deletions. Renders
@@ -107,12 +151,17 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
         const group = groupLabel(ws.status);
         const header = group !== prevGroup ? group : undefined;
         prevGroup = group;
-        // Reserve room for the diff-stat badge so the title doesn't crowd it
-        // out; both share the row's text budget (cursor + icon take ~4 cols).
+        // Reserve room for the diff-stat and usage badges so the title doesn't
+        // crowd them out; all three share the row's text budget (cursor + icon
+        // take ~4 cols).
         const badge = statText(ws.stat);
+        const usage = usageText(ws.usage);
         const titleBudget = Math.max(
           4,
-          width - 8 - (badge ? badge.length + 1 : 0),
+          width -
+            8 -
+            (badge ? badge.length + 1 : 0) -
+            (usage ? usage.length + 1 : 0),
         );
         return (
           <React.Fragment key={ws.id}>
@@ -134,6 +183,12 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
                 <Text>
                   {" "}
                   <DiffStatBadge stat={ws.stat} />
+                </Text>
+              )}
+              {usage && (
+                <Text>
+                  {" "}
+                  <UsageBadge usage={ws.usage} />
                 </Text>
               )}
               {ws.pendingPermission && (

@@ -56,6 +56,27 @@ export interface DiffStat {
   deletions: number;
 }
 
+/**
+ * Token usage and cost for a workspace's agent session, summed across every
+ * turn. Cache-read and cache-creation input tokens are tracked separately from
+ * plain input because they bill at very different rates, so keeping them apart
+ * lets the UI show an honest breakdown. Only agents that report usage in their
+ * output populate this (Claude Code emits it on every `result` event); others
+ * leave {@link Workspace.usage} undefined and the UI shows no usage badge.
+ */
+export interface TokenUsage {
+  /** Non-cached input (prompt) tokens, billed at the full input rate. */
+  inputTokens: number;
+  /** Generated output (completion) tokens. */
+  outputTokens: number;
+  /** Input tokens served from the prompt cache, billed at the cheaper read rate. */
+  cacheReadTokens: number;
+  /** Input tokens written into the prompt cache, billed at the write rate. */
+  cacheCreationTokens: number;
+  /** Cost in USD, as reported by the agent, summed across turns. */
+  costUsd: number;
+}
+
 export interface Workspace {
   id: string;
   title: string;
@@ -91,6 +112,14 @@ export interface Workspace {
    * (a request from a dead process can never be answered).
    */
   pendingPermission?: PermissionRequest;
+  /**
+   * Cumulative token usage and cost for this workspace's agent session, summed
+   * across every turn the agent reported usage for (see
+   * {@link AgentBackend.parseUsage}). Undefined for agents that don't surface
+   * usage, in which case the UI shows no usage badge. Persisted, so the totals
+   * survive a restart even though the live process does not.
+   */
+  usage?: TokenUsage;
   exitCode?: number;
   error?: string;
   createdAt: number;
@@ -137,6 +166,16 @@ export interface AgentBackend {
    * it can run (or skip) the tool and continue.
    */
   encodePermission?(req: PermissionRequest, allow: boolean): string;
+  /**
+   * For agents that report token usage in their output: extract the usage for
+   * the turn this raw stdout line represents (Claude Code carries it on each
+   * `result` event). Returns the per-turn delta — the manager sums these into
+   * {@link Workspace.usage} across the session — or null for lines that carry
+   * no usage. We treat each reported figure as one turn's contribution and add
+   * them up, so this is the place to adjust if a CLI change ever makes the
+   * numbers cumulative rather than per-turn.
+   */
+  parseUsage?(line: string): TokenUsage | null;
   /**
    * For interactive agents: does this raw stdout line end a turn with the agent
    * waiting on the user — i.e. it asked a question and now needs a reply to
