@@ -20,7 +20,7 @@ const GLOBAL: Binding[] = [
 ];
 
 const LIST: Binding[] = [
-  { keys: "n", action: "new workspace (pick agent, prompt, title)" },
+  { keys: "n", action: "new workspace(s) (agent, prompt, title, fan-out count)" },
   { keys: "↑/↓ · k/j", action: "move selection" },
   { keys: "↵", action: "open workspace (live output)" },
   { keys: "d", action: "open workspace on the diff view" },

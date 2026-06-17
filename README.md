@@ -32,6 +32,18 @@ live **elapsed-time** badge, so you can see how long the current turn has been
 running. The clock starts when a turn begins (launch, a reply, or a restart) and
 stops the moment the turn ends.
 
+## Fanning out a prompt
+
+The payoff of isolated worktrees is racing the same task several ways at once.
+When you create a workspace (`n`), the last step asks how many parallel
+workspaces to spin up. Leave it at `1` for a single agent, or bump it (up to 8)
+to launch that many independent attempts from the same prompt and agent in one
+step. Each gets its own worktree, branch, and agent process, and a numbered
+title (`Fix login (1/3)`, `(2/3)`, …) so the attempts stay tellable apart in the
+list. They run in parallel; review their diffs side by side and merge whichever
+came out best, then archive the rest. (You can still re-roll a single workspace
+after the fact with `C` — fan-out just does it up front.)
+
 ## Attention alerts
 
 Running several agents at once only pays off if you can look away and get pinged
@@ -87,7 +99,7 @@ pnpm start ../my-repo   # or point at another repo
 
 | key                | action                                         |
 | ------------------ | ---------------------------------------------- |
-| `n`                | new workspace (pick agent, prompt, title)      |
+| `n`                | new workspace(s) (agent, prompt, title, fan-out count) |
 | `↑`/`↓` or `k`/`j` | move selection                                 |
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
