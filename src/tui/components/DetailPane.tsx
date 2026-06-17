@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { Workspace } from "../../core/types.js";
+import { DiffStatBadge } from "./WorkspaceList.js";
 
 interface Props {
   ws: Workspace | undefined;
@@ -138,6 +139,15 @@ export function DetailPane({
           {"  "}
           {ws.agentId} · {ws.branch} · {ws.status}
         </Text>
+        {ws.stat && ws.stat.files > 0 && (
+          <Text>
+            <Text dimColor>
+              {" · "}
+              {ws.stat.files} file{ws.stat.files === 1 ? "" : "s"}{" "}
+            </Text>
+            <DiffStatBadge stat={ws.stat} />
+          </Text>
+        )}
         {ws.awaitingInput && !composing && (
           <Text color="yellow"> · awaiting input (i to reply)</Text>
         )}

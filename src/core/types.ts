@@ -9,6 +9,16 @@ export type WorkspaceStatus =
   // gone, but the worktree and its work survive and remain reviewable.
   | "stopped";
 
+/** Size of a worktree's changes against the base branch. */
+export interface DiffStat {
+  /** Number of files touched (added, modified, or deleted). */
+  files: number;
+  /** Total lines added across those files. */
+  insertions: number;
+  /** Total lines removed across those files. */
+  deletions: number;
+}
+
 export interface Workspace {
   id: string;
   title: string;
@@ -20,6 +30,13 @@ export interface Workspace {
   status: WorkspaceStatus;
   /** Rolling buffer of agent output lines (most recent last). */
   output: string[];
+  /**
+   * Last-known size of the worktree's diff against the base branch. Refreshed
+   * when a turn ends and when the diff is viewed (not while the agent is
+   * actively working), so it reflects the most recent settled state. Undefined
+   * until first computed.
+   */
+  stat?: DiffStat;
   /**
    * For interactive agents (see {@link AgentBackend.encodeInput}): the agent
    * finished a turn by asking the user something and is now idle, waiting for a
