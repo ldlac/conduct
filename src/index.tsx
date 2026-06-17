@@ -1,29 +1,74 @@
 import React from "react";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { render } from "ink";
 import { WorkspaceManager } from "./core/manager.js";
 import { availableAgents } from "./core/agents.js";
 import type { Workspace } from "./core/types.js";
 import { App } from "./tui/App.js";
 
-// Run an interactive shell in a worktree, returning once the user exits it.
-// This is deliberately invoked only while Ink is unmounted: an interactive
-// shell (fish/zsh/bash) makes itself the terminal's foreground process group on
-// startup, which demotes us to the background. If Ink were still mounted it
-// would keep writing to the tty and get hit with SIGTTOU — stopping our whole
-// process (e.g. `fish: Job 2, 'pnpm dev' has stopped`). With Ink torn down we
-// touch the terminal only to print the banner before handing it over.
+// Shell env handed to a worktree shell, so the user (and their prompt) can tell
+// they're inside a conduct worktree and which workspace it belongs to.
+function shellEnv(ws: Workspace): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    CONDUCT_WORKSPACE: ws.title,
+    CONDUCT_WORKTREE: ws.path,
+  };
+}
+
+// Preferred path when we're already running inside tmux: open the worktree
+// shell in a brand-new tmux window instead of seizing our own terminal. conduct
+// keeps running untouched in its original window (agents keep streaming), and
+// the shell — and any dev server the user starts in it — lives in a separate
+// pty, which sidesteps the raw-mode / job-control fight of an in-terminal
+// handoff entirely. Returns false (so the caller can fall back) when we're not
+// in tmux or the command fails.
+function openInTmux(ws: Workspace): boolean {
+  if (!process.env.TMUX) return false;
+  // Sanitize the title into a tmux-friendly window name.
+  const name = (ws.title || "worktree").replace(/[^\w.-]/g, "-").slice(0, 40);
+  const res = spawnSync(
+    "tmux",
+    ["new-window", "-c", ws.path, "-n", name, process.env.SHELL || "/bin/bash"],
+    { stdio: "ignore" },
+  );
+  return res.status === 0;
+}
+
+// In-terminal fallback: run an interactive shell in the worktree, returning once
+// the user exits it. This is invoked only while Ink is unmounted, because an
+// interactive shell (fish/zsh/bash) makes itself the terminal's foreground
+// process group on startup; if Ink were still mounted it would keep writing to
+// the tty and get hit with SIGTTOU — stopping our whole process (e.g.
+// `fish: Job 2, 'pnpm dev' has stopped`).
+//
+// Unmounting Ink is necessary but not sufficient: Ink does not reliably take the
+// tty out of raw mode or detach its stdin listeners on unmount, so the child
+// shell would inherit a raw-mode tty while node keeps consuming keystrokes —
+// the shell then sees no usable input and dies the instant it opens. We
+// explicitly hand the terminal back to a sane cooked state and stop reading
+// stdin before spawning; the fresh render() in main() re-arms everything after.
 function runShell(ws: Workspace): Promise<void> {
   return new Promise((resolve) => {
     const shell = process.env.SHELL || "/bin/bash";
+    const stdin = process.stdin;
+    try {
+      if (stdin.isTTY) stdin.setRawMode(false);
+    } catch {
+      // Best-effort: a non-tty or already-cooked stdin is fine to leave as-is.
+    }
+    stdin.removeAllListeners("data");
+    stdin.removeAllListeners("readable");
+    stdin.pause();
+
     process.stdout.write(
       `\nconduct: shell in ${ws.path}\n(exit or Ctrl-D to return)\n\n`,
     );
     const child = spawn(shell, [], {
       stdio: "inherit",
       cwd: ws.path,
-      env: process.env,
+      env: shellEnv(ws),
     });
     child.on("exit", () => resolve());
     child.on("error", (err) => {
@@ -63,9 +108,15 @@ async function main() {
         agents={agents}
         initialSelectedId={selectedId}
         onShell={(ws) => {
+          // When we can open a separate tmux window, do that and stay mounted —
+          // no handoff, no teardown. Report back so the TUI can confirm it.
+          if (openInTmux(ws)) return `opened ${ws.title} in a tmux window`;
+          // Otherwise fall back to the in-terminal handoff: unmount Ink, let the
+          // loop below run the shell to completion, then re-render.
           shellRequest = ws;
           selectedId = ws.id;
           instance.unmount();
+          return undefined;
         }}
       />,
     );
