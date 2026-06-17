@@ -4,7 +4,10 @@ export type WorkspaceStatus =
   | "done"
   | "error"
   | "merged"
-  | "archived";
+  | "archived"
+  // Agent was still running when a previous session ended; the process is
+  // gone, but the worktree and its work survive and remain reviewable.
+  | "stopped";
 
 export interface Workspace {
   id: string;

@@ -21,6 +21,19 @@ Each workspace is:
 Because every workspace is a separate worktree, agents never collide on the
 working tree, and nothing touches your main checkout until you merge.
 
+## Session persistence
+
+Workspaces are remembered across restarts. Their metadata (and a tail of each
+agent's output) is saved to `~/.conduct/worktrees/<repo>/.conduct-state.json`
+on every change and reloaded when you reopen the repo, so the worktrees and
+branches `conduct` creates are never orphaned. On reload:
+
+- a workspace whose agent was still running is shown as `stopped` (the process
+  does not survive a restart, but its worktree and work are intact and still
+  reviewable / mergeable),
+- a workspace whose worktree has since been removed on disk is dropped from the
+  list.
+
 ## Requirements
 
 - Node 22+ and pnpm (provided by the devenv shell here)
@@ -84,6 +97,7 @@ src/
     types.ts     workspace + agent-backend types
     git.ts       worktree / diff / merge helpers
     agents.ts    agent registry (claude, codex, mock)
+    store.ts     workspace persistence (load/save state across restarts)
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/
     App.tsx      Ink app + keybindings
@@ -93,6 +107,5 @@ src/
 
 ## Not yet (possible next steps)
 
-Session persistence across restarts, multi-repo, per-workspace terminals,
-conflict-aware merge UI, and a richer diff browser. The core is structured so
-these slot in around `WorkspaceManager`.
+Multi-repo, per-workspace terminals, conflict-aware merge UI, and a richer diff
+browser. The core is structured so these slot in around `WorkspaceManager`.
