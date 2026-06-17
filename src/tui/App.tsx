@@ -18,6 +18,17 @@ import {
 type Mode = "list" | "detail" | "new";
 type View = "output" | "diff";
 
+// Canned prompt sent to the workspace's agent when the user presses `S`. It
+// asks the agent to turn whatever feature it just built into a reusable skill,
+// grounded in the actual changes on the worktree's branch.
+const SKILL_PROMPT =
+  "Create a Claude Code skill that captures the feature you just built in this " +
+  "workspace. Review the changes on this worktree (diff against the base branch) " +
+  "to ground it, then write .claude/skills/<skill-name>/SKILL.md with YAML " +
+  "frontmatter (a kebab-case `name` and a one-line `description` of when to use " +
+  "it) plus concise instructions covering what the feature does, how to use it, " +
+  "and when to apply it.";
+
 interface Props {
   manager: WorkspaceManager;
   agents: AgentInfo[];
@@ -197,6 +208,15 @@ export function App({ manager, agents }: Props) {
         }
         if (input === "x") {
           void doArchive(current);
+          return;
+        }
+        if (input === "S") {
+          if (!current) return;
+          if (manager.sendInput(current.id, SKILL_PROMPT)) {
+            flash(`asked ${current.title} to build a skill`);
+          } else {
+            flash("agent is not running / not interactive");
+          }
           return;
         }
         if (input === "R") {
