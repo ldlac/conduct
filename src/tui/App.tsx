@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Box, useApp, useInput, useStdout } from "ink";
 import { sumUsage, type WorkspaceManager } from "../core/manager.js";
-import type { Workspace } from "../core/types.js";
+import type { AttentionReason, Workspace } from "../core/types.js";
 import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
 import {
   DetailPane,
@@ -28,6 +28,14 @@ const SKILL_PROMPT =
   "frontmatter (a kebab-case `name` and a one-line `description` of when to use " +
   "it) plus concise instructions covering what the feature does, how to use it, " +
   "and when to apply it.";
+
+// One-line note shown (and bell rung) when a workspace newly needs attention.
+const ATTENTION_LABEL: Record<AttentionReason, string> = {
+  "awaiting-input": "asked a question — press i to reply",
+  permission: "wants permission — y/n",
+  done: "finished — ready to review",
+  error: "exited with an error",
+};
 
 interface Props {
   manager: WorkspaceManager;
@@ -65,6 +73,14 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
   const [reply, setReply] = useState("");
+  // Incremental title filter for the list. `filtering` is the text-entry mode
+  // (typing the query); `filter` is the applied query, which keeps narrowing
+  // the list even after the user stops typing, until cleared with esc.
+  const [filtering, setFiltering] = useState(false);
+  const [filter, setFilter] = useState("");
+  // Ticks once a second while an agent is running so live runtime badges
+  // advance; `now` is read by the list/detail components for elapsed time.
+  const [now, setNow] = useState(() => Date.now());
   const [size, setSize] = useState({
     cols: stdout.columns || 100,
     rows: stdout.rows || 30,
@@ -79,6 +95,36 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     };
   }, [manager]);
 
+  // Ring the terminal bell and surface a one-line note whenever a workspace
+  // newly needs attention (turn ended, question asked, permission requested,
+  // or it errored). This is the payoff of running agents in parallel: you can
+  // look away and get pinged when one of them actually needs you.
+  useEffect(() => {
+    const onAttention = (ws: Workspace, reason: AttentionReason) => {
+      // BEL (ASCII 7) — the terminal's audible/visual bell.
+      stdout.write(String.fromCharCode(7));
+      setMessage(`🔔 ${ws.title}: ${ATTENTION_LABEL[reason]}`);
+    };
+    manager.on("attention", onAttention);
+    return () => {
+      manager.off("attention", onAttention);
+    };
+  }, [manager, stdout]);
+
+  // Drive the runtime clock only while something is actually running, so an
+  // idle session doesn't re-render every second for nothing. Snap `now` to the
+  // current time as soon as a run begins so the first badge isn't a tick stale.
+  const anyRunning = useMemo(
+    () => items.some((w) => w.runStartedAt),
+    [items],
+  );
+  useEffect(() => {
+    if (!anyRunning) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [anyRunning]);
+
   // Track terminal resizes.
   useEffect(() => {
     const onResize = () =>
@@ -90,7 +136,16 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }, [stdout]);
 
   // Grouped/ordered view that the list renders and selection indexes into.
-  const ordered = useMemo(() => sortWorkspaces(items), [items]);
+  // The title filter narrows the set first; an out-of-view selection simply
+  // falls back to the first visible row (see selectedIndex below) and is
+  // restored when the filter is cleared.
+  const ordered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const matched = q
+      ? items.filter((w) => w.title.toLowerCase().includes(q))
+      : items;
+    return sortWorkspaces(matched);
+  }, [items, filter]);
   // Session-wide token/cost tally for the status bar.
   const sessionUsage = useMemo(() => sumUsage(items), [items]);
   const selectedIndex = Math.max(
@@ -207,6 +262,24 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     (input, key) => {
       setMessage(undefined);
 
+      // While the filter box is open it owns the keyboard: type to narrow the
+      // list, Enter to apply and return to navigation (the query stays active),
+      // Esc to clear it. This sits above every other binding so letters like
+      // n/d/q build the query instead of triggering their commands.
+      if (filtering) {
+        if (key.escape) {
+          setFiltering(false);
+          setFilter("");
+        } else if (key.return) {
+          setFiltering(false);
+        } else if (key.backspace || key.delete) {
+          setFilter((f) => f.slice(0, -1));
+        } else if (input && !key.ctrl && !key.meta) {
+          setFilter((f) => f + input);
+        }
+        return;
+      }
+
       if (mode === "list" || mode === "detail") {
         // A pending permission request blocks the selected agent, so answering
         // it takes precedence over the normal bindings: y allows, n denies.
@@ -287,6 +360,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           setMode("detail");
           setView("diff");
           void loadDiff(current);
+        } else if (input === "/") {
+          setFiltering(true);
         }
         return;
       }
@@ -360,6 +435,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           items={ordered}
           selectedIndex={selectedIndex}
           width={listWidth}
+          now={now}
+          filter={filter}
         />
         <DetailPane
           ws={current}
@@ -368,6 +445,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           scroll={topNow}
           width={detailWidth}
           height={bodyHeight}
+          now={now}
           composing={composing}
           reply={reply}
           onReplyChange={setReply}
@@ -385,6 +463,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         repo={manager.git.root}
         baseBranch={manager.baseBranch}
         usage={sessionUsage}
+        filtering={filtering}
+        filter={filter}
       />
     </Box>
   );

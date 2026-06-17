@@ -32,6 +32,30 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
+/** Compact elapsed time: 8s → "8s", 95s → "1m35s", 3725s → "1h2m". Seconds are
+ * dropped past an hour, where they no longer carry useful signal. */
+export function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h${m % 60}m`;
+}
+
+/** Live elapsed-time string for an actively-running workspace, or "" when it
+ * isn't running. `now` is supplied by the caller so the value advances as the
+ * caller re-renders on a timer rather than the badge reading the clock itself. */
+export function runtimeText(ws: Workspace, now: number): string {
+  return ws.runStartedAt ? formatDuration(now - ws.runStartedAt) : "";
+}
+
+/** Dim elapsed-time badge for a running workspace. Renders nothing when idle. */
+export function RuntimeBadge({ ws, now }: { ws: Workspace; now: number }) {
+  const text = runtimeText(ws, now);
+  return text ? <Text dimColor>{text}</Text> : null;
+}
+
 /** Dollar cost with enough precision to stay meaningful for cheap sessions. */
 export function formatCost(usd: number): string {
   if (usd <= 0) return "$0";
@@ -130,9 +154,20 @@ interface Props {
   items: Workspace[];
   selectedIndex: number;
   width: number;
+  /** Current wall-clock time, threaded in so live runtime badges advance with
+   * the caller's render timer. */
+  now: number;
+  /** Active title filter, shown in the header so a narrowed list is obvious. */
+  filter?: string;
 }
 
-export function WorkspaceList({ items, selectedIndex, width }: Props) {
+export function WorkspaceList({
+  items,
+  selectedIndex,
+  width,
+  now,
+  filter,
+}: Props) {
   let prevGroup: string | undefined;
   return (
     <Box
@@ -142,9 +177,14 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
       borderColor="gray"
       paddingX={1}
     >
-      <Text bold>Workspaces ({items.length})</Text>
+      <Text bold>
+        Workspaces ({items.length})
+        {filter ? <Text color="cyan"> /{filter}</Text> : null}
+      </Text>
       {items.length === 0 && (
-        <Text dimColor>none yet — press n to create one</Text>
+        <Text dimColor>
+          {filter ? "no matches — esc to clear" : "none yet — press n to create one"}
+        </Text>
       )}
       {items.map((ws, i) => {
         const selected = i === selectedIndex;
@@ -156,12 +196,14 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
         // take ~4 cols).
         const badge = statText(ws.stat);
         const usage = usageText(ws.usage);
+        const runtime = runtimeText(ws, now);
         const titleBudget = Math.max(
           4,
           width -
             8 -
             (badge ? badge.length + 1 : 0) -
-            (usage ? usage.length + 1 : 0),
+            (usage ? usage.length + 1 : 0) -
+            (runtime ? runtime.length + 1 : 0),
         );
         return (
           <React.Fragment key={ws.id}>
@@ -189,6 +231,12 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
                 <Text>
                   {" "}
                   <UsageBadge usage={ws.usage} />
+                </Text>
+              )}
+              {runtime && (
+                <Text>
+                  {" "}
+                  <RuntimeBadge ws={ws} now={now} />
                 </Text>
               )}
               {ws.pendingPermission && (

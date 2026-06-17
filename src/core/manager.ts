@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import { Git, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
-import type { TokenUsage, Workspace } from "./types.js";
+import type { AttentionReason, TokenUsage, Workspace } from "./types.js";
 
 const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
@@ -101,6 +101,9 @@ export class WorkspaceManager extends EventEmitter {
       // The agent process didn't survive the restart, so any permission it was
       // blocked on is stale — there's no one to answer.
       ws.pendingPermission = undefined;
+      // Nothing is running, so a stale "started running at" would make the UI
+      // tick an elapsed timer for a process that no longer exists.
+      ws.runStartedAt = undefined;
       this.workspaces.set(ws.id, ws);
     }
     if (this.workspaces.size > 0) this.touch();
@@ -132,6 +135,17 @@ export class WorkspaceManager extends EventEmitter {
         },
       );
     }, SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * Announce that a workspace just transitioned into a state that wants the
+   * user's attention (see {@link AttentionReason}). Emitted as a discrete
+   * `attention` event — separate from `update` — so the UI can react once (ring
+   * the bell, surface a note) on the edge rather than every render. Fired only
+   * on the transition, never repeatedly while the workspace waits.
+   */
+  private notifyAttention(ws: Workspace, reason: AttentionReason): void {
+    this.emit("attention", ws, reason);
   }
 
   private append(ws: Workspace, text: string): void {
@@ -182,6 +196,8 @@ export class WorkspaceManager extends EventEmitter {
     ws.status = "running";
     ws.awaitingInput = false;
     ws.pendingPermission = undefined;
+    // Start the turn clock so the UI can show how long this run has been going.
+    ws.runStartedAt = Date.now();
     // The agent is about to change the worktree, so any conflict list from an
     // earlier merge attempt is now stale — drop it.
     ws.conflicts = undefined;
@@ -229,6 +245,9 @@ export class WorkspaceManager extends EventEmitter {
           // is visible in the output view, not just the header.
           ws.pendingPermission = control.request;
           this.append(ws, `⏸ permission requested — ${control.request.summary}`);
+          // The agent is now blocked until the user answers, so flag it for
+          // attention (rings the bell even if the user is looking elsewhere).
+          this.notifyAttention(ws, "permission");
         }
         return;
       }
@@ -242,9 +261,14 @@ export class WorkspaceManager extends EventEmitter {
       if (interactive && agent.turnEnded?.(raw)) {
         ws.awaitingInput = agent.awaitsReply?.(raw) ?? false;
         if (ws.status === "running") ws.status = "done";
+        // The turn is over: the agent is idle, so stop its elapsed-time clock.
+        ws.runStartedAt = undefined;
         // The agent just went idle, so the worktree has settled: refresh the
         // diff size badge to reflect what this turn produced.
         void this.refreshStat(ws);
+        // The agent needs the user now — either to answer its question or to
+        // review the finished work. Alert on the transition into idle.
+        this.notifyAttention(ws, ws.awaitingInput ? "awaiting-input" : "done");
         changed = true;
       }
       // Token usage rides on the same line that ends a turn; accumulate it into
@@ -278,7 +302,15 @@ export class WorkspaceManager extends EventEmitter {
       ws.awaitingInput = false;
       // A request from a process that's now gone can never be answered.
       ws.pendingPermission = undefined;
-      if (ws.status === "running") ws.status = code === 0 ? "done" : "error";
+      // The process is gone, so the turn clock stops regardless of outcome.
+      ws.runStartedAt = undefined;
+      if (ws.status === "running") {
+        ws.status = code === 0 ? "done" : "error";
+        // A one-shot agent (or any process that exits on its own) reaches its
+        // terminal state here rather than via a turn boundary; alert the same
+        // way an interactive turn end does.
+        this.notifyAttention(ws, code === 0 ? "done" : "error");
+      }
       this.procs.delete(ws.id);
       void this.refreshStat(ws);
       this.append(ws, `\n[agent exited with code ${code}]`);
@@ -341,8 +373,12 @@ export class WorkspaceManager extends EventEmitter {
     // list from a prior merge attempt no longer reflects reality.
     ws.conflicts = undefined;
     // A reply kicks off a new turn: the agent is working again until it ends
-    // the turn (see onLine), so reflect that unless it's already terminal.
-    if (ws.status === "done" || ws.status === "stopped") ws.status = "running";
+    // the turn (see onLine), so reflect that unless it's already terminal, and
+    // restart the elapsed-time clock for the fresh turn.
+    if (ws.status === "done" || ws.status === "stopped") {
+      ws.status = "running";
+      ws.runStartedAt = Date.now();
+    }
     this.append(ws, `❯ ${text}`);
     return true;
   }

@@ -6,6 +6,7 @@ import {
   DiffStatBadge,
   formatCost,
   formatTokens,
+  runtimeText,
   totalTokens,
 } from "./WorkspaceList.js";
 
@@ -16,6 +17,8 @@ interface Props {
   scroll: number;
   width: number;
   height: number;
+  /** Current wall-clock time, so the header's live runtime advances on tick. */
+  now: number;
   /** Whether the reply box is open (feeds the running agent's stdin). */
   composing: boolean;
   reply: string;
@@ -77,6 +80,7 @@ export function DetailPane({
   scroll,
   width,
   height,
+  now,
   composing,
   reply,
   onReplyChange,
@@ -143,6 +147,7 @@ export function DetailPane({
         <Text dimColor>
           {"  "}
           {ws.agentId} · {ws.branch} · {ws.status}
+          {runtimeText(ws, now) && ` · ${runtimeText(ws, now)}`}
         </Text>
         {ws.stat && ws.stat.files > 0 && (
           <Text>

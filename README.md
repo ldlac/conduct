@@ -27,6 +27,28 @@ so you can see at a glance how much each agent changed (and which made no change
 at all). It refreshes whenever an agent finishes a turn and whenever you open the
 diff, so it tracks the worktree's settled state without polling a running agent.
 
+While an agent is actively working its row (and the detail header) also shows a
+live **elapsed-time** badge, so you can see how long the current turn has been
+running. The clock starts when a turn begins (launch, a reply, or a restart) and
+stops the moment the turn ends.
+
+## Attention alerts
+
+Running several agents at once only pays off if you can look away and get pinged
+when one needs you. conduct rings the terminal bell and shows a one-line note
+whenever a workspace crosses into a state that wants your attention: it finished
+a turn and is ready to review, asked a question, paused for a tool-permission
+request, or exited with an error. The bell fires once on the transition, not
+repeatedly while the workspace waits.
+
+## Filtering the list
+
+With many workspaces in flight, press `/` to filter the list by title. Type to
+narrow it incrementally, `↵` to apply the filter and return to navigation (it
+stays active), and `esc` to clear it. The active filter is shown in the list
+header and the status bar; selection falls back to the first match while
+filtered and is restored when you clear it.
+
 ## Session persistence
 
 Workspaces are remembered across restarts. Their metadata (and a tail of each
@@ -69,6 +91,7 @@ pnpm start ../my-repo   # or point at another repo
 | `↑`/`↓` or `k`/`j` | move selection                                 |
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
+| `/`                | filter the list by title (↵ apply · esc clear) |
 | `c`                | jump into a shell in the workspace's worktree  |
 | `m`                | merge selected workspace into the base branch  |
 | `s`                | stop the running agent                         |
