@@ -159,6 +159,8 @@ interface Props {
   now: number;
   /** Active title filter, shown in the header so a narrowed list is obvious. */
   filter?: string;
+  /** Set of workspace ids marked for batch operations. */
+  marks?: Set<string>;
 }
 
 export function WorkspaceList({
@@ -167,6 +169,7 @@ export function WorkspaceList({
   width,
   now,
   filter,
+  marks,
 }: Props) {
   let prevGroup: string | undefined;
   return (
@@ -179,6 +182,9 @@ export function WorkspaceList({
     >
       <Text bold>
         Workspaces ({items.length})
+        {marks && marks.size > 0 ? (
+          <Text color="yellow"> · {marks.size} marked (Space)</Text>
+        ) : null}
         {filter ? <Text color="cyan"> /{filter}</Text> : null}
       </Text>
       {items.length === 0 && (
@@ -249,6 +255,12 @@ export function WorkspaceList({
                 <Text color="red" bold>
                   {" "}
                   ⚠
+                </Text>
+              )}
+              {marks?.has(ws.id) && (
+                <Text color="yellow" bold>
+                  {" "}
+                  ●
                 </Text>
               )}
             </Box>

@@ -25,17 +25,19 @@ const LIST: Binding[] = [
   { keys: "↵", action: "open workspace (live output)" },
   { keys: "d", action: "open workspace on the diff view" },
   { keys: "/", action: "filter the list by title" },
+  { keys: "Space", action: "toggle mark for batch operations" },
+  { keys: "Esc", action: "clear all marks (when any are set)" },
 ];
 
 const ACTIONS: Binding[] = [
   { keys: "e", action: "rename the workspace title" },
   { keys: "C", action: "clone — re-run this prompt in a fresh worktree" },
   { keys: "c", action: "jump into a shell in the worktree" },
-  { keys: "m", action: "merge into the base branch" },
+  { keys: "m", action: "merge (selected or all marked)" },
   { keys: "s", action: "stop the running agent" },
   { keys: "S", action: "ask the agent to turn its work into a skill" },
-  { keys: "R", action: "restart the agent in the existing worktree" },
-  { keys: "x", action: "archive (stop agent, remove worktree + branch)" },
+  { keys: "R", action: "restart the agent (selected or all marked)" },
+  { keys: "x", action: "archive (selected or all marked)" },
   { keys: "y / n", action: "allow / deny a pending permission request" },
 ];
 

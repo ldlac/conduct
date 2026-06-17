@@ -61,6 +61,19 @@ stays active), and `esc` to clear it. The active filter is shown in the list
 header and the status bar; selection falls back to the first match while
 filtered and is restored when you clear it.
 
+## Batch operations
+
+With several workspaces in flight, press `Space` to mark workspaces for batch
+operations. Each marked workspace shows a `●` indicator in the list. With marks
+active:
+
+- `m` merges every marked workspace that is ready to review (status `done` or `stopped`)
+- `x` archives every marked workspace (stops the agent, removes the worktree and branch)
+- `R` restarts every marked workspace
+
+Marks survive navigation and mode switches. Press `Esc` to clear all marks.
+The status bar shows the mark count and available commands while marks exist.
+
 ## Session persistence
 
 Workspaces are remembered across restarts. Their metadata (and a tail of each
@@ -104,14 +117,15 @@ pnpm start ../my-repo   # or point at another repo
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
 | `/`                | filter the list by title (↵ apply · esc clear) |
+| `Space`            | toggle mark on the selected workspace          |
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |
 | `c`                | jump into a shell in the workspace's worktree  |
-| `m`                | merge selected workspace into the base branch  |
+| `m`                | merge (selected, or all marked when marks exist) |
 | `s`                | stop the running agent                         |
 | `S`                | ask the agent to turn its work into a skill    |
-| `R`                | restart the agent in the existing worktree     |
-| `x`                | archive (stop agent, remove worktree + branch) |
+| `R`                | restart (selected, or all marked when marks exist) |
+| `x`                | archive (selected, or all marked when marks exist) |
 | `y` / `n`          | allow / deny a pending permission request      |
 | `?`                | toggle the keybinding help overlay             |
 | `q`                | quit                                           |
