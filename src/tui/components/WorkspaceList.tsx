@@ -136,6 +136,12 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
                   <DiffStatBadge stat={ws.stat} />
                 </Text>
               )}
+              {ws.pendingPermission && (
+                <Text color="yellow" bold>
+                  {" "}
+                  ⏸
+                </Text>
+              )}
             </Box>
           </React.Fragment>
         );

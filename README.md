@@ -75,6 +75,7 @@ pnpm start ../my-repo   # or point at another repo
 | `S`                | ask the agent to turn its work into a skill    |
 | `R`                | restart the agent in the existing worktree     |
 | `x`                | archive (stop agent, remove worktree + branch) |
+| `y` / `n`          | allow / deny a pending permission request      |
 | `q`                | quit                                           |
 
 **Detail**
@@ -85,6 +86,7 @@ pnpm start ../my-repo   # or point at another repo
 | `d`                | diff view                         |
 | `c`                | shell in the worktree             |
 | `i`                | reply to the agent (answer a Q)   |
+| `y` / `n`          | allow / deny a permission request |
 | `S`                | ask the agent to build a skill    |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff                   |
 | `R`                | restart the agent                 |
@@ -107,6 +109,17 @@ workspace no longer shows `running` the whole time: when a turn ends the agent
 goes idle and the workspace flips to `done` (it moves to "Ready to review"), and
 your next reply flips it back to `running`. You can merge straight from `done`;
 merging shuts the idle session down for you, so there's no need to stop it first.
+
+## Approving tool use
+
+Each workspace edits files freely inside its own isolated worktree (those are
+auto-approved), but anything with effects beyond it — running a shell command,
+fetching a URL — pauses for your OK. When the agent asks, the workspace shows a
+`⏸` marker in the list and the detail header reads `⏸ allow Bash? (y/n)`; the
+exact request (e.g. the command it wants to run) is logged in the output view.
+Press `y` to allow it or `n` to deny, and the agent continues. A denied tool
+isn't fatal: the agent is told you declined and can take another approach. If
+the agent exits while a request is pending, the request is dropped.
 
 ## Jumping into a worktree
 
