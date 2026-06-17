@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { Workspace } from "../../core/types.js";
+import type { Workspace, WorkspaceStatus } from "../../core/types.js";
 
 const COLORS: Record<Workspace["status"], string> = {
   creating: "yellow",
@@ -12,6 +12,40 @@ const COLORS: Record<Workspace["status"], string> = {
   archived: "gray",
   stopped: "yellow",
 };
+
+// The list is grouped by lifecycle stage so related workspaces sit together:
+// the ones still working, the ones ready for you to review/merge, the merged
+// ones, failures, and archived. Order here is also the top-to-bottom order.
+const GROUPS: { label: string; statuses: WorkspaceStatus[] }[] = [
+  { label: "In progress", statuses: ["creating", "running"] },
+  { label: "Ready to review", statuses: ["done", "stopped"] },
+  { label: "Merged", statuses: ["merged"] },
+  { label: "Failed", statuses: ["error"] },
+  { label: "Archived", statuses: ["archived"] },
+];
+
+function groupIndex(status: WorkspaceStatus): number {
+  const i = GROUPS.findIndex((g) => g.statuses.includes(status));
+  return i === -1 ? GROUPS.length : i;
+}
+
+export function groupLabel(status: WorkspaceStatus): string {
+  return GROUPS[groupIndex(status)]?.label ?? "Other";
+}
+
+/**
+ * Order workspaces by lifecycle group (see {@link GROUPS}), then by creation
+ * time within each group. Stable and pure, so callers can rely on the same
+ * ordering for both rendering and selection bookkeeping.
+ */
+export function sortWorkspaces(items: Workspace[]): Workspace[] {
+  return [...items].sort((a, b) => {
+    const ga = groupIndex(a.status);
+    const gb = groupIndex(b.status);
+    if (ga !== gb) return ga - gb;
+    return a.createdAt - b.createdAt;
+  });
+}
 
 function StatusIcon({ status }: { status: Workspace["status"] }) {
   if (status === "creating" || status === "running") {
@@ -29,12 +63,14 @@ function StatusIcon({ status }: { status: Workspace["status"] }) {
 }
 
 interface Props {
+  /** Already ordered by {@link sortWorkspaces} (the caller owns selection). */
   items: Workspace[];
   selectedIndex: number;
   width: number;
 }
 
 export function WorkspaceList({ items, selectedIndex, width }: Props) {
+  let prevGroup: string | undefined;
   return (
     <Box
       flexDirection="column"
@@ -49,17 +85,27 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
       )}
       {items.map((ws, i) => {
         const selected = i === selectedIndex;
+        const group = groupLabel(ws.status);
+        const header = group !== prevGroup ? group : undefined;
+        prevGroup = group;
         return (
-          <Box key={ws.id}>
-            <Text color={selected ? "cyan" : undefined}>
-              {selected ? "❯ " : "  "}
-            </Text>
-            <StatusIcon status={ws.status} />
-            <Text color={selected ? "cyan" : undefined} bold={selected}>
-              {" "}
-              {ws.title.slice(0, width - 8)}
-            </Text>
-          </Box>
+          <React.Fragment key={ws.id}>
+            {header && (
+              <Text dimColor bold>
+                {header}
+              </Text>
+            )}
+            <Box>
+              <Text color={selected ? "cyan" : undefined}>
+                {selected ? "❯ " : "  "}
+              </Text>
+              <StatusIcon status={ws.status} />
+              <Text color={selected ? "cyan" : undefined} bold={selected}>
+                {" "}
+                {ws.title.slice(0, width - 8)}
+              </Text>
+            </Box>
+          </React.Fragment>
         );
       })}
     </Box>
