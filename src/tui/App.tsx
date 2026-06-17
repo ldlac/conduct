@@ -3,7 +3,12 @@ import { Box, useApp, useInput, useStdout } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { Workspace } from "../core/types.js";
 import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
-import { DetailPane, detailBodyHeight } from "./components/DetailPane.js";
+import {
+  DetailPane,
+  detailBodyHeight,
+  detailTextWidth,
+  wrappedRowCount,
+} from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
 import {
   NewWorkspaceForm,
@@ -70,16 +75,26 @@ export function App({ manager, agents }: Props) {
   );
   const current = ordered[selectedIndex];
 
+  // Layout widths, needed up front so the scroll geometry can account for line
+  // wrapping at the pane's exact text width.
+  const listWidth = Math.min(40, Math.floor(size.cols * 0.35));
+  const detailWidth = size.cols - listWidth - 2;
+
   // Scroll geometry, shared by the key handler and the render so they agree on
   // the bounds. `bodyHeight` mirrors the value handed to the panes below.
   const bodyHeight = Math.max(8, size.rows - 4);
   const viewportRows = detailBodyHeight(bodyHeight, composing);
-  const totalLines =
+  // Count wrapped display rows (not logical lines) so scrolling reaches every
+  // row of a long, wrapped line and the tail lands on the real bottom.
+  const sourceLines =
     view === "diff"
       ? diff
-        ? diff.split("\n").length
-        : 1
-      : (current?.output.length ?? 1);
+        ? diff.split("\n")
+        : ["(no changes yet)"]
+      : current?.output.length
+        ? current.output
+        : ["(no output yet)"];
+  const totalLines = wrappedRowCount(sourceLines, detailTextWidth(detailWidth));
   const maxScroll = Math.max(0, totalLines - viewportRows);
   // While following, the conceptual top is the bottom of the buffer.
   const topNow = view === "output" && followTail ? maxScroll : Math.min(scroll, maxScroll);
@@ -270,9 +285,6 @@ export function App({ manager, agents }: Props) {
       />
     );
   }
-
-  const listWidth = Math.min(40, Math.floor(size.cols * 0.35));
-  const detailWidth = size.cols - listWidth - 2;
 
   return (
     <Box flexDirection="column" height={size.rows}>

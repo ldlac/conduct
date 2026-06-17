@@ -35,6 +35,35 @@ export function detailBodyHeight(height: number, composing: boolean): number {
   return Math.max(3, height - 4 - (composing ? 1 : 0));
 }
 
+/**
+ * Width available for body text inside the pane, once the round border (1 col
+ * each side) and horizontal padding (1 col each side) are subtracted.
+ */
+export function detailTextWidth(width: number): number {
+  return Math.max(1, width - 4);
+}
+
+/**
+ * Hard-wrap one logical line into display rows no wider than `width`. Unlike
+ * `wrap="truncate-end"`, this keeps every character — long lines spill onto
+ * extra rows instead of being cut off with an ellipsis.
+ */
+export function wrapLine(line: string, width: number): string[] {
+  if (width <= 0 || line.length <= width) return [line];
+  const rows: string[] = [];
+  for (let i = 0; i < line.length; i += width) {
+    rows.push(line.slice(i, i + width));
+  }
+  return rows;
+}
+
+/** Total number of display rows `lines` occupy once wrapped to `width`. */
+export function wrappedRowCount(lines: string[], width: number): number {
+  let n = 0;
+  for (const l of lines) n += wrapLine(l, width).length;
+  return n;
+}
+
 export function DetailPane({
   ws,
   view,
@@ -74,16 +103,25 @@ export function DetailPane({
       : ws.output.length
         ? ws.output
         : ["(no output yet)"];
+  // Wrap each logical line into display rows so nothing is lost to truncation.
+  // Scroll, slicing and the position indicator all work in display rows, and
+  // the App computes its scroll bounds against the same wrapped count.
+  const textWidth = detailTextWidth(width);
+  const rows = all.flatMap((l) => {
+    const color = view === "diff" ? diffColor(l) : undefined;
+    return wrapLine(l, textWidth).map((text) => ({ text, color }));
+  });
+
   // `scroll` is a top offset clamped by the App; for the output view the App
   // pins it to the bottom (tail) until the user scrolls up.
-  const top = Math.min(Math.max(0, scroll), Math.max(0, all.length - bodyHeight));
-  const lines = all.slice(top, top + bodyHeight);
+  const top = Math.min(Math.max(0, scroll), Math.max(0, rows.length - bodyHeight));
+  const lines = rows.slice(top, top + bodyHeight);
 
   // Position indicator, shown only when the content is taller than the pane.
-  const last = Math.min(top + bodyHeight, all.length);
-  const scrollable = all.length > bodyHeight;
+  const last = Math.min(top + bodyHeight, rows.length);
+  const scrollable = rows.length > bodyHeight;
   const position = scrollable
-    ? `  ${top + 1}-${last}/${all.length}${last < all.length ? " ↓" : ""}`
+    ? `  ${top + 1}-${last}/${rows.length}${last < rows.length ? " ↓" : ""}`
     : "";
 
   return (
@@ -109,13 +147,9 @@ export function DetailPane({
         {position}
       </Text>
       <Box flexDirection="column" height={bodyHeight} overflow="hidden">
-        {lines.map((l, i) => (
-          <Text
-            key={i}
-            color={view === "diff" ? diffColor(l) : undefined}
-            wrap="truncate-end"
-          >
-            {l || " "}
+        {lines.map((row, i) => (
+          <Text key={i} color={row.color} wrap="truncate-end">
+            {row.text || " "}
           </Text>
         ))}
       </Box>
