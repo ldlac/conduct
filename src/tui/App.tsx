@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Box, useApp, useInput, useStdout } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { Workspace } from "../core/types.js";
-import { WorkspaceList } from "./components/WorkspaceList.js";
+import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
 import { DetailPane, detailBodyHeight } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
 import {
@@ -23,7 +23,10 @@ export function App({ manager, agents }: Props) {
   const { stdout } = useStdout();
 
   const [items, setItems] = useState<Workspace[]>(manager.snapshot());
-  const [selected, setSelected] = useState(0);
+  // Selection is tracked by workspace id, not list position, so a workspace
+  // changing status (and thus moving between groups) keeps the same one
+  // highlighted instead of the cursor sticking to a row index.
+  const [selectedId, setSelectedId] = useState<string | undefined>();
   const [mode, setMode] = useState<Mode>("list");
   const [view, setView] = useState<View>("output");
   const [diff, setDiff] = useState("");
@@ -59,7 +62,13 @@ export function App({ manager, agents }: Props) {
     };
   }, [stdout]);
 
-  const current = items[selected];
+  // Grouped/ordered view that the list renders and selection indexes into.
+  const ordered = useMemo(() => sortWorkspaces(items), [items]);
+  const selectedIndex = Math.max(
+    0,
+    ordered.findIndex((w) => w.id === selectedId),
+  );
+  const current = ordered[selectedIndex];
 
   // Scroll geometry, shared by the key handler and the render so they agree on
   // the bounds. `bodyHeight` mirrors the value handed to the panes below.
@@ -135,12 +144,15 @@ export function App({ manager, agents }: Props) {
   const doArchive = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
+      // Move selection to a neighbour before the archived row leaves the list.
+      const neighbour =
+        ordered[selectedIndex + 1] ?? ordered[selectedIndex - 1];
       await manager.archive(ws.id);
       flash(`archived ${ws.title}`);
-      setSelected((s) => Math.max(0, s - 1));
+      setSelectedId(neighbour?.id);
       if (mode === "detail") setMode("list");
     },
-    [manager, flash, mode],
+    [manager, flash, mode, ordered, selectedIndex],
   );
 
   useInput(
@@ -180,9 +192,11 @@ export function App({ manager, agents }: Props) {
 
       if (mode === "list") {
         if (key.upArrow || input === "k")
-          setSelected((s) => Math.max(0, s - 1));
+          setSelectedId(ordered[Math.max(0, selectedIndex - 1)]?.id);
         else if (key.downArrow || input === "j")
-          setSelected((s) => Math.min(items.length - 1, s + 1));
+          setSelectedId(
+            ordered[Math.min(ordered.length - 1, selectedIndex + 1)]?.id,
+          );
         else if (key.return) {
           setMode("detail");
           setView("output");
@@ -251,7 +265,7 @@ export function App({ manager, agents }: Props) {
           setMode("list");
           flash(`launching ${agentId}…`);
           const ws = await manager.createWorkspace({ title, prompt, agentId });
-          setSelected(manager.snapshot().findIndex((w) => w.id === ws.id));
+          setSelectedId(ws.id);
         }}
       />
     );
@@ -264,8 +278,8 @@ export function App({ manager, agents }: Props) {
     <Box flexDirection="column" height={size.rows}>
       <Box flexDirection="row" height={bodyHeight}>
         <WorkspaceList
-          items={items}
-          selectedIndex={selected}
+          items={ordered}
+          selectedIndex={selectedIndex}
           width={listWidth}
         />
         <DetailPane
