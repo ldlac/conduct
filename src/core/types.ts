@@ -46,6 +46,13 @@ export type ControlEvent =
   | { kind: "permission"; request: PermissionRequest }
   | { kind: "ack"; reply: string };
 
+/**
+ * How to order workspaces in the list. `group` is the default: lifecycle stage
+ * (running, done, merged, …) then creation time. The others are flat sorts
+ * that ignore lifecycle grouping entirely.
+ */
+export type SortMode = "group" | "alpha" | "newest" | "oldest";
+
 /** Size of a worktree's changes against the base branch. */
 export interface DiffStat {
   /** Number of files touched (added, modified, or deleted). */

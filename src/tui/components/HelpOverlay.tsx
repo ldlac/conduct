@@ -25,6 +25,7 @@ const LIST: Binding[] = [
   { keys: "↵", action: "open workspace (live output)" },
   { keys: "d", action: "open workspace on the diff view" },
   { keys: "/", action: "filter the list by title" },
+  { keys: "Tab", action: "cycle sort mode (group / A–Z / newest / oldest)" },
   { keys: "Space", action: "toggle mark for batch operations" },
   { keys: "Esc", action: "clear all marks (when any are set)" },
 ];
