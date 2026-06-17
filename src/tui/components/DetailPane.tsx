@@ -2,7 +2,12 @@ import React from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { Workspace } from "../../core/types.js";
-import { DiffStatBadge } from "./WorkspaceList.js";
+import {
+  DiffStatBadge,
+  formatCost,
+  formatTokens,
+  totalTokens,
+} from "./WorkspaceList.js";
 
 interface Props {
   ws: Workspace | undefined;
@@ -146,6 +151,18 @@ export function DetailPane({
               {ws.stat.files} file{ws.stat.files === 1 ? "" : "s"}{" "}
             </Text>
             <DiffStatBadge stat={ws.stat} />
+          </Text>
+        )}
+        {ws.usage && totalTokens(ws.usage) > 0 && (
+          <Text dimColor>
+            {" · "}
+            {formatTokens(totalTokens(ws.usage))} tok (
+            {formatTokens(ws.usage.inputTokens)}↑{" "}
+            {formatTokens(ws.usage.outputTokens)}↓{" "}
+            {formatTokens(
+              ws.usage.cacheReadTokens + ws.usage.cacheCreationTokens,
+            )}
+            ⚡) · {formatCost(ws.usage.costUsd)}
           </Text>
         )}
         {ws.pendingPermission ? (

@@ -1,5 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
+import type { TokenUsage } from "../../core/types.js";
+import { usageText } from "./WorkspaceList.js";
 
 interface Props {
   mode: "list" | "detail" | "new";
@@ -7,6 +9,8 @@ interface Props {
   message?: string;
   repo: string;
   baseBranch: string;
+  /** Combined token usage across all workspaces, for the session tally. */
+  usage?: TokenUsage;
 }
 
 const HINTS: Record<string, string> = {
@@ -16,7 +20,15 @@ const HINTS: Record<string, string> = {
   new: "fill the form · esc cancel",
 };
 
-export function StatusBar({ mode, view, message, repo, baseBranch }: Props) {
+export function StatusBar({
+  mode,
+  view,
+  message,
+  repo,
+  baseBranch,
+  usage,
+}: Props) {
+  const tally = usageText(usage);
   return (
     <Box flexDirection="column">
       {message ? (
@@ -24,6 +36,7 @@ export function StatusBar({ mode, view, message, repo, baseBranch }: Props) {
       ) : (
         <Text dimColor>
           {repo} @ {baseBranch}
+          {tally && ` · session: ${tally}`}
         </Text>
       )}
       <Text inverse>

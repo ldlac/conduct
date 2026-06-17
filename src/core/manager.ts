@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import { Git } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
-import type { Workspace } from "./types.js";
+import type { TokenUsage, Workspace } from "./types.js";
 
 const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
@@ -244,6 +244,14 @@ export class WorkspaceManager extends EventEmitter {
         void this.refreshStat(ws);
         changed = true;
       }
+      // Token usage rides on the same line that ends a turn; accumulate it into
+      // the running session total so the badge reflects the whole conversation,
+      // not just the last turn.
+      const usage = agent.parseUsage?.(raw);
+      if (usage) {
+        ws.usage = addUsage(ws.usage, usage);
+        changed = true;
+      }
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
       if (pretty != null) this.append(ws, pretty);
       else if (changed) this.touch();
@@ -443,6 +451,30 @@ export class WorkspaceManager extends EventEmitter {
       /* nothing useful to do as the process is exiting */
     }
   }
+}
+
+/** Add a per-turn usage delta onto a running total, starting from zero. */
+function addUsage(prev: TokenUsage | undefined, delta: TokenUsage): TokenUsage {
+  return {
+    inputTokens: (prev?.inputTokens ?? 0) + delta.inputTokens,
+    outputTokens: (prev?.outputTokens ?? 0) + delta.outputTokens,
+    cacheReadTokens: (prev?.cacheReadTokens ?? 0) + delta.cacheReadTokens,
+    cacheCreationTokens:
+      (prev?.cacheCreationTokens ?? 0) + delta.cacheCreationTokens,
+    costUsd: (prev?.costUsd ?? 0) + delta.costUsd,
+  };
+}
+
+/**
+ * Sum the usage across many workspaces into one session total, or undefined if
+ * none of them reported any usage. Used by the UI for the status-bar tally.
+ */
+export function sumUsage(workspaces: Workspace[]): TokenUsage | undefined {
+  let total: TokenUsage | undefined;
+  for (const ws of workspaces) {
+    if (ws.usage) total = addUsage(total, ws.usage);
+  }
+  return total;
 }
 
 async function pathExists(p: string): Promise<boolean> {

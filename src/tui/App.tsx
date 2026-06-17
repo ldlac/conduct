@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Box, useApp, useInput, useStdout } from "ink";
-import type { WorkspaceManager } from "../core/manager.js";
+import { sumUsage, type WorkspaceManager } from "../core/manager.js";
 import type { Workspace } from "../core/types.js";
 import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
 import {
@@ -91,6 +91,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
 
   // Grouped/ordered view that the list renders and selection indexes into.
   const ordered = useMemo(() => sortWorkspaces(items), [items]);
+  // Session-wide token/cost tally for the status bar.
+  const sessionUsage = useMemo(() => sumUsage(items), [items]);
   const selectedIndex = Math.max(
     0,
     ordered.findIndex((w) => w.id === selectedId),
@@ -373,6 +375,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         message={message}
         repo={manager.git.root}
         baseBranch={manager.baseBranch}
+        usage={sessionUsage}
       />
     </Box>
   );

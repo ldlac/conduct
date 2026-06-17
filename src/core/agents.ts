@@ -1,5 +1,5 @@
 import { run } from "./git.js";
-import type { AgentBackend, PermissionRequest } from "./types.js";
+import type { AgentBackend, PermissionRequest, TokenUsage } from "./types.js";
 
 /**
  * Heuristic for "the agent's final message asked the user something". Looks at
@@ -167,6 +167,31 @@ const claude: AgentBackend = {
       return false;
     }
   },
+  parseUsage(line): TokenUsage | null {
+    // Usage rides on the same `result` event that ends a turn: the CLI reports
+    // the turn's token counts under `usage` and its dollar cost under
+    // `total_cost_usd`. Field names mirror the API's usage block; this and the
+    // control-protocol fields above are the Claude-specific bits to re-check if
+    // a CLI upgrade changes the wire format.
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let evt: any;
+    try {
+      evt = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+    if (evt.type !== "result") return null;
+    const u = evt.usage ?? {};
+    const num = (v: unknown) => (typeof v === "number" && isFinite(v) ? v : 0);
+    return {
+      inputTokens: num(u.input_tokens),
+      outputTokens: num(u.output_tokens),
+      cacheReadTokens: num(u.cache_read_input_tokens),
+      cacheCreationTokens: num(u.cache_creation_input_tokens),
+      costUsd: num(evt.total_cost_usd),
+    };
+  },
   parseLine(line) {
     const trimmed = line.trim();
     if (!trimmed) return null;
@@ -268,6 +293,19 @@ const mock: AgentBackend = {
     // Both sentinels close a turn; only @@await@@ also awaits a reply.
     const t = line.trim();
     return t === "@@await@@" || t === "@@done@@";
+  },
+  parseUsage(line): TokenUsage | null {
+    // Synthesize a small per-turn usage delta on each turn-end sentinel so the
+    // token/cost badges can be exercised end to end without spending tokens.
+    const t = line.trim();
+    if (t !== "@@await@@" && t !== "@@done@@") return null;
+    return {
+      inputTokens: 1200,
+      outputTokens: 340,
+      cacheReadTokens: 800,
+      cacheCreationTokens: 0,
+      costUsd: 0.012,
+    };
   },
   parseLine(line) {
     // Hide the internal turn-end sentinels from the output view.
