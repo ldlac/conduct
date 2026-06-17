@@ -68,6 +68,7 @@ pnpm start ../my-repo   # or point at another repo
 | `↑`/`↓` or `k`/`j` | move selection                                 |
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
+| `c`                | jump into a shell in the workspace's worktree  |
 | `m`                | merge selected workspace into the base branch  |
 | `s`                | stop the running agent                         |
 | `S`                | ask the agent to turn its work into a skill    |
@@ -81,6 +82,7 @@ pnpm start ../my-repo   # or point at another repo
 | ------------------ | --------------------------------- |
 | `o` / `↵`          | output view (tails live)          |
 | `d`                | diff view                         |
+| `c`                | shell in the worktree             |
 | `i`                | reply to the agent (answer a Q)   |
 | `S`                | ask the agent to build a skill    |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff                   |
@@ -104,6 +106,15 @@ workspace no longer shows `running` the whole time: when a turn ends the agent
 goes idle and the workspace flips to `done` (it moves to "Ready to review"), and
 your next reply flips it back to `running`. You can merge straight from `done`;
 merging shuts the idle session down for you, so there's no need to stop it first.
+
+## Jumping into a worktree
+
+To poke at what an agent built by hand (run it, run its tests, `git log`), press
+`c` on a workspace (from the list or the detail view). `conduct` suspends the
+TUI and drops you into an interactive shell (`$SHELL`, falling back to
+`/bin/bash`) already `cd`'d into that workspace's worktree. Test away, then type
+`exit` (or Ctrl-D) to return to exactly where you were. Archived workspaces have
+no worktree to enter, so `c` is a no-op there.
 
 ## Agent flags
 
@@ -135,5 +146,5 @@ src/
 
 ## Not yet (possible next steps)
 
-Multi-repo, per-workspace terminals, conflict-aware merge UI, and a richer diff
-browser. The core is structured so these slot in around `WorkspaceManager`.
+Multi-repo, conflict-aware merge UI, and a richer diff browser. The core is
+structured so these slot in around `WorkspaceManager`.

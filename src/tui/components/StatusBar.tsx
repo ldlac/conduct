@@ -10,9 +10,9 @@ interface Props {
 }
 
 const HINTS: Record<string, string> = {
-  list: "n new · ↑/↓ select · ↵ open · d diff · m merge · s stop · S skill · R restart · x archive · q quit",
+  list: "n new · ↑/↓ select · ↵ open · d diff · c shell · m merge · s stop · S skill · R restart · x archive · q quit",
   detail:
-    "↵/o output · d diff · i reply · ↑/↓ scroll · m merge · s stop · S skill · R restart · r refresh · esc back",
+    "↵/o output · d diff · c shell · i reply · ↑/↓ scroll · m merge · s stop · S skill · R restart · r refresh · esc back",
   new: "fill the form · esc cancel",
 };
 
