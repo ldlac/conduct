@@ -32,10 +32,12 @@ const SKILL_PROMPT =
 interface Props {
   manager: WorkspaceManager;
   agents: AgentInfo[];
-  // Requests that the host (index.tsx) drop into an interactive shell in this
-  // workspace's worktree. The host unmounts Ink first so the terminal is fully
-  // released to the child shell, then re-renders the app when the shell exits.
-  onShell: (ws: Workspace) => void;
+  // Requests that the host (index.tsx) open an interactive shell in this
+  // workspace's worktree. Inside tmux the host opens a new window and we stay
+  // running — it returns a confirmation string to flash. Otherwise the host
+  // unmounts Ink, runs the shell in this terminal, and re-renders on exit
+  // (returning nothing, since the TUI is being torn down).
+  onShell: (ws: Workspace) => string | void;
   // Workspace to pre-select on mount, so returning from a shell lands the
   // cursor back on the same workspace the user jumped into.
   initialSelectedId?: string;
@@ -238,7 +240,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           } else if (current.status === "archived") {
             flash("worktree was removed (archived)");
           } else {
-            onShell(current);
+            const msg = onShell(current);
+            if (msg) flash(msg);
           }
           return;
         }

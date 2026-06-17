@@ -110,11 +110,21 @@ merging shuts the idle session down for you, so there's no need to stop it first
 ## Jumping into a worktree
 
 To poke at what an agent built by hand (run it, run its tests, `git log`), press
-`c` on a workspace (from the list or the detail view). `conduct` suspends the
-TUI and drops you into an interactive shell (`$SHELL`, falling back to
-`/bin/bash`) already `cd`'d into that workspace's worktree. Test away, then type
-`exit` (or Ctrl-D) to return to exactly where you were. Archived workspaces have
-no worktree to enter, so `c` is a no-op there.
+`c` on a workspace (from the list or the detail view). The shell opens already
+`cd`'d into that workspace's worktree, with `CONDUCT_WORKSPACE` and
+`CONDUCT_WORKTREE` exported so you can tell where you are.
+
+How it opens depends on your environment:
+
+- **Inside tmux** (recommended): `conduct` opens a new tmux window running your
+  shell in the worktree, and keeps running untouched in its own window. Your
+  agents keep streaming and a dev server you start in the worktree can run
+  alongside the TUI. Switch back with your normal tmux keys.
+- **Otherwise**: `conduct` suspends the TUI and drops you into an interactive
+  shell (`$SHELL`, falling back to `/bin/bash`) in this terminal. Type `exit`
+  (or Ctrl-D) to return to exactly where you were.
+
+Archived workspaces have no worktree to enter, so `c` is a no-op there.
 
 ## Agent flags
 
