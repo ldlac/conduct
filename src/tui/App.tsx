@@ -29,6 +29,9 @@ export function App({ manager, agents }: Props) {
   const [diff, setDiff] = useState("");
   const [scroll, setScroll] = useState(0);
   const [message, setMessage] = useState<string | undefined>();
+  // When set, the detail pane shows a reply box that feeds the agent's stdin.
+  const [composing, setComposing] = useState(false);
+  const [reply, setReply] = useState("");
   const [size, setSize] = useState({
     cols: stdout.columns || 100,
     rows: stdout.rows || 30,
@@ -94,6 +97,19 @@ export function App({ manager, agents }: Props) {
         flash(`restarted ${ws.title}`);
       } catch (err) {
         flash(`restart failed: ${err instanceof Error ? err.message : err}`);
+      }
+    },
+    [manager, flash],
+  );
+
+  const sendReply = useCallback(
+    (ws: Workspace | undefined, text: string) => {
+      setComposing(false);
+      setReply("");
+      const trimmed = text.trim();
+      if (!ws || !trimmed) return;
+      if (!manager.sendInput(ws.id, trimmed)) {
+        flash("agent is not accepting input");
       }
     },
     [manager, flash],
@@ -166,6 +182,16 @@ export function App({ manager, agents }: Props) {
           setMode("list");
           return;
         }
+        if (input === "i") {
+          if (manager.acceptsInput(current?.id ?? "")) {
+            setView("output");
+            setReply("");
+            setComposing(true);
+          } else {
+            flash("agent is not running / not interactive");
+          }
+          return;
+        }
         if (input === "o" || key.return) {
           setView("output");
           return;
@@ -189,7 +215,7 @@ export function App({ manager, agents }: Props) {
         return;
       }
     },
-    { isActive: mode !== "new" },
+    { isActive: mode !== "new" && !composing },
   );
 
   if (mode === "new") {
@@ -226,6 +252,14 @@ export function App({ manager, agents }: Props) {
           scroll={scroll}
           width={detailWidth}
           height={bodyHeight}
+          composing={composing}
+          reply={reply}
+          onReplyChange={setReply}
+          onReplySubmit={() => sendReply(current, reply)}
+          onReplyCancel={() => {
+            setComposing(false);
+            setReply("");
+          }}
         />
       </Box>
       <StatusBar
