@@ -87,6 +87,18 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When true, the keybinding cheat-sheet takes over the screen until any key is
   // pressed. Toggled with `?`.
   const [showHelp, setShowHelp] = useState(false);
+  // Marked workspace ids for batch operations. Toggled with Space; when marks
+  // exist, merge/archive/restart operate on every marked workspace instead of
+  // the single selected one. Cleared explicitly (Esc) or after a batch action.
+  const [markedIds, setMarkedIds] = useState<string[]>([]);
+  const marks = useMemo(() => new Set(markedIds), [markedIds]);
+  const toggleMark = useCallback((id: string) => {
+    setMarkedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+  const hasMarks = markedIds.length > 0;
+  const clearMarks = useCallback(() => setMarkedIds([]), []);
   // Ticks once a second while an agent is running so live runtime badges
   // advance; `now` is read by the list/detail components for elapsed time.
   const [now, setNow] = useState(() => Date.now());
@@ -284,6 +296,67 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash, mode, ordered, selectedIndex],
   );
 
+  const doMergeMany = useCallback(async () => {
+    const targets = ordered.filter((w) => markedIds.includes(w.id));
+    if (targets.length === 0) {
+      flash("no marked workspaces");
+      return;
+    }
+    let merged = 0;
+    let failed = 0;
+    for (const ws of targets) {
+      if (ws.status !== "done" && ws.status !== "stopped") continue;
+      try {
+        const result = await manager.merge(ws.id);
+        if (result.ok) merged++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    clearMarks();
+    flash(`merged ${merged}, failed ${failed} of ${targets.length} marked`);
+  }, [manager, flash, ordered, markedIds, clearMarks]);
+
+  const doArchiveMany = useCallback(async () => {
+    const targets = ordered.filter((w) => markedIds.includes(w.id));
+    if (targets.length === 0) {
+      flash("no marked workspaces");
+      return;
+    }
+    let count = 0;
+    for (const ws of targets) {
+      await manager.archive(ws.id);
+      count++;
+    }
+    clearMarks();
+    // Selection may have been on an archived workspace; move to first remaining.
+    const remaining = manager.snapshot();
+    setSelectedId(remaining[0]?.id);
+    setMode("list");
+    flash(`archived ${count} workspace${count === 1 ? "" : "s"}`);
+  }, [manager, flash, ordered, markedIds, clearMarks]);
+
+  const doRestartMany = useCallback(async () => {
+    const targets = ordered.filter((w) => markedIds.includes(w.id));
+    if (targets.length === 0) {
+      flash("no marked workspaces");
+      return;
+    }
+    let count = 0;
+    for (const ws of targets) {
+      if (ws.status === "merged" || ws.status === "archived") continue;
+      try {
+        await manager.restart(ws.id);
+        count++;
+      } catch {
+        /* skip workspaces that can't be restarted */
+      }
+    }
+    clearMarks();
+    flash(`restarted ${count} of ${targets.length} marked`);
+  }, [manager, flash, ordered, markedIds, clearMarks]);
+
   useInput(
     (input, key) => {
       setMessage(undefined);
@@ -348,6 +421,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
             return;
           }
         }
+        // Clear marks on Esc before falling through to mode-specific handlers.
+        if (key.escape && hasMarks) {
+          clearMarks();
+          return;
+        }
         if (input === "q" || (key.ctrl && input === "c")) {
           manager.shutdown();
           exit();
@@ -357,8 +435,16 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           setMode("new");
           return;
         }
+        if (input === " " && current) {
+          toggleMark(current.id);
+          return;
+        }
         if (input === "m") {
-          void doMerge(current);
+          if (hasMarks) {
+            void doMergeMany();
+          } else {
+            void doMerge(current);
+          }
           return;
         }
         if (input === "s") {
@@ -369,7 +455,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           return;
         }
         if (input === "x") {
-          void doArchive(current);
+          if (hasMarks) {
+            void doArchiveMany();
+          } else {
+            void doArchive(current);
+          }
           return;
         }
         if (input === "S") {
@@ -382,7 +472,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           return;
         }
         if (input === "R") {
-          void doRestart(current);
+          if (hasMarks) {
+            void doRestartMany();
+          } else {
+            void doRestart(current);
+          }
           return;
         }
         if (input === "c") {
@@ -522,6 +616,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           width={listWidth}
           now={now}
           filter={filter}
+          marks={marks}
         />
         <DetailPane
           ws={current}
@@ -552,6 +647,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         filter={filter}
         renaming={renaming}
         renameText={renameText}
+        markedCount={markedIds.length}
       />
     </Box>
   );

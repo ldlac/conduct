@@ -21,10 +21,12 @@ interface Props {
   renaming?: boolean;
   /** The in-progress title edit (while renaming). */
   renameText?: string;
+  /** Number of workspaces marked for batch operations. */
+  markedCount?: number;
 }
 
 const HINTS: Record<string, string> = {
-  list: "n new · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · c shell · i reply · ↑/↓ scroll · e rename · C clone · m merge · s stop · R restart · ? help · esc back",
   new: "fill the form · esc cancel",
@@ -41,6 +43,7 @@ export function StatusBar({
   filter,
   renaming,
   renameText,
+  markedCount,
 }: Props) {
   const tally = usageText(usage);
   return (
@@ -61,6 +64,10 @@ export function StatusBar({
         </Text>
       ) : message ? (
         <Text color="yellow">{message}</Text>
+      ) : markedCount ? (
+        <Text color="yellow">
+          {markedCount} marked · Space to toggle · Esc to clear · m/x/R on marked
+        </Text>
       ) : (
         <Text dimColor>
           {repo} @ {baseBranch}
