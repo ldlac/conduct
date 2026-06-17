@@ -21,6 +21,12 @@ Each workspace is:
 Because every workspace is a separate worktree, agents never collide on the
 working tree, and nothing touches your main checkout until you merge.
 
+Each workspace also carries a **diff-size badge** (`+120 -8`, green insertions
+and red deletions) shown next to its title in the list and in the detail header,
+so you can see at a glance how much each agent changed (and which made no changes
+at all). It refreshes whenever an agent finishes a turn and whenever you open the
+diff, so it tracks the worktree's settled state without polling a running agent.
+
 ## Session persistence
 
 Workspaces are remembered across restarts. Their metadata (and a tail of each

@@ -1,7 +1,26 @@
 import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { Workspace, WorkspaceStatus } from "../../core/types.js";
+import type { DiffStat, Workspace, WorkspaceStatus } from "../../core/types.js";
+
+/** Plain-text form of a diff stat (`+120 -8`), or "" when there's nothing to
+ * show. Used both to size list rows and as the basis for the colored badge. */
+export function statText(stat: DiffStat | undefined): string {
+  if (!stat || stat.files === 0) return "";
+  return `+${stat.insertions} -${stat.deletions}`;
+}
+
+/** GitHub-style colored diff stat: green insertions, red deletions. Renders
+ * nothing when there are no changes yet. */
+export function DiffStatBadge({ stat }: { stat: DiffStat | undefined }) {
+  if (!stat || stat.files === 0) return null;
+  return (
+    <Text>
+      <Text color="green">+{stat.insertions}</Text>{" "}
+      <Text color="red">-{stat.deletions}</Text>
+    </Text>
+  );
+}
 
 const COLORS: Record<Workspace["status"], string> = {
   creating: "yellow",
@@ -88,6 +107,13 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
         const group = groupLabel(ws.status);
         const header = group !== prevGroup ? group : undefined;
         prevGroup = group;
+        // Reserve room for the diff-stat badge so the title doesn't crowd it
+        // out; both share the row's text budget (cursor + icon take ~4 cols).
+        const badge = statText(ws.stat);
+        const titleBudget = Math.max(
+          4,
+          width - 8 - (badge ? badge.length + 1 : 0),
+        );
         return (
           <React.Fragment key={ws.id}>
             {header && (
@@ -102,8 +128,14 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
               <StatusIcon status={ws.status} />
               <Text color={selected ? "cyan" : undefined} bold={selected}>
                 {" "}
-                {ws.title.slice(0, width - 8)}
+                {ws.title.slice(0, titleBudget)}
               </Text>
+              {badge && (
+                <Text>
+                  {" "}
+                  <DiffStatBadge stat={ws.stat} />
+                </Text>
+              )}
             </Box>
           </React.Fragment>
         );

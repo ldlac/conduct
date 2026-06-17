@@ -217,6 +217,9 @@ export class WorkspaceManager extends EventEmitter {
       if (interactive && agent.turnEnded?.(raw)) {
         ws.awaitingInput = agent.awaitsReply?.(raw) ?? false;
         if (ws.status === "running") ws.status = "done";
+        // The agent just went idle, so the worktree has settled: refresh the
+        // diff size badge to reflect what this turn produced.
+        void this.refreshStat(ws);
         changed = true;
       }
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
@@ -242,8 +245,35 @@ export class WorkspaceManager extends EventEmitter {
       ws.awaitingInput = false;
       if (ws.status === "running") ws.status = code === 0 ? "done" : "error";
       this.procs.delete(ws.id);
+      void this.refreshStat(ws);
       this.append(ws, `\n[agent exited with code ${code}]`);
     });
+  }
+
+  /**
+   * Recompute the workspace's diff-size badge from its worktree and emit an
+   * update if it changed. Called when the agent goes idle (turn end / exit) and
+   * when the diff is viewed — never while the agent is actively working, to
+   * avoid racing `git add -N` against in-flight edits. Best-effort: a transient
+   * git failure leaves the last-known stat in place.
+   */
+  private async refreshStat(ws: Workspace): Promise<void> {
+    if (!ws.path) return;
+    try {
+      const stat = await this.git.diffNumstat(ws.path, this.baseBranch);
+      const prev = ws.stat;
+      if (
+        !prev ||
+        prev.files !== stat.files ||
+        prev.insertions !== stat.insertions ||
+        prev.deletions !== stat.deletions
+      ) {
+        ws.stat = stat;
+        this.touch();
+      }
+    } catch {
+      /* worktree may be mid-write; keep the last-known stat */
+    }
   }
 
   isRunning(id: string): boolean {
@@ -309,7 +339,11 @@ export class WorkspaceManager extends EventEmitter {
   async getDiff(id: string): Promise<string> {
     const ws = this.workspaces.get(id);
     if (!ws || !ws.path) return "";
-    return this.git.diff(ws.path, this.baseBranch);
+    const diff = await this.git.diff(ws.path, this.baseBranch);
+    // Viewing the diff is a natural moment to refresh the size badge, and the
+    // worktree is already settled enough to have produced a diff.
+    void this.refreshStat(ws);
+    return diff;
   }
 
   /** Commit any pending work in the worktree, then merge the branch into base. */

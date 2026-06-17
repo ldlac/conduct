@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { DiffStat } from "./types.js";
 
 export interface RunResult {
   code: number;
@@ -103,6 +104,27 @@ export class Git {
   async diffStat(worktree: string, baseRef: string): Promise<string> {
     await this.intentToAdd(worktree);
     return git(["diff", "--stat", baseRef], worktree);
+  }
+
+  /**
+   * Change totals of a worktree against base, parsed from `git diff --numstat`:
+   * one `<added>\t<deleted>\t<path>` row per file. Binary files report `-` for
+   * the counts, which we treat as zero lines while still counting the file.
+   */
+  async diffNumstat(worktree: string, baseRef: string): Promise<DiffStat> {
+    await this.intentToAdd(worktree);
+    const out = await git(["diff", "--numstat", baseRef], worktree);
+    let files = 0;
+    let insertions = 0;
+    let deletions = 0;
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue;
+      const [added, deleted] = line.split("\t");
+      files += 1;
+      if (added !== "-") insertions += Number(added) || 0;
+      if (deleted !== "-") deletions += Number(deleted) || 0;
+    }
+    return { files, insertions, deletions };
   }
 
   /** True if the worktree has any staged, unstaged, or untracked changes. */
