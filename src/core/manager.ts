@@ -231,6 +231,28 @@ export class WorkspaceManager extends EventEmitter {
     if (child) child.kill("SIGTERM");
   }
 
+  /**
+   * Re-run the agent in an existing workspace's worktree. Useful for resuming a
+   * workspace left `stopped` by a previous session, or retrying one that ended
+   * `done`/`error`. The worktree is reused as-is (any prior changes remain), so
+   * this continues on top of earlier work rather than starting from a clean tree.
+   */
+  async restart(id: string): Promise<void> {
+    const ws = this.workspaces.get(id);
+    if (!ws) throw new Error("No such workspace");
+    if (this.isRunning(id)) throw new Error("Agent is already running");
+    if (ws.status === "merged" || ws.status === "archived") {
+      throw new Error(`Cannot restart a ${ws.status} workspace`);
+    }
+    if (!ws.path || !(await pathExists(ws.path))) {
+      throw new Error("Worktree is missing — archive and recreate this workspace");
+    }
+    ws.error = undefined;
+    ws.exitCode = undefined;
+    this.append(ws, "\n— restart —");
+    this.startAgent(ws);
+  }
+
   async getDiff(id: string): Promise<string> {
     const ws = this.workspaces.get(id);
     if (!ws || !ws.path) return "";

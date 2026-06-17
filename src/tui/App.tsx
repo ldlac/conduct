@@ -86,6 +86,19 @@ export function App({ manager, agents }: Props) {
     [manager, flash],
   );
 
+  const doRestart = useCallback(
+    async (ws: Workspace | undefined) => {
+      if (!ws) return;
+      try {
+        await manager.restart(ws.id);
+        flash(`restarted ${ws.title}`);
+      } catch (err) {
+        flash(`restart failed: ${err instanceof Error ? err.message : err}`);
+      }
+    },
+    [manager, flash],
+  );
+
   const doArchive = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -124,6 +137,10 @@ export function App({ manager, agents }: Props) {
         }
         if (input === "x") {
           void doArchive(current);
+          return;
+        }
+        if (input === "R") {
+          void doRestart(current);
           return;
         }
       }
