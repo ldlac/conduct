@@ -97,6 +97,7 @@ export class WorkspaceManager extends EventEmitter {
       if (ws.status === "creating" || ws.status === "running") {
         ws.status = "stopped";
       }
+      ws.awaitingInput = false;
       this.workspaces.set(ws.id, ws);
     }
     if (this.workspaces.size > 0) this.touch();
@@ -174,7 +175,9 @@ export class WorkspaceManager extends EventEmitter {
   private startAgent(ws: Workspace): void {
     const agent = getAgent(ws.agentId);
     const { cmd, args, env } = agent.buildCommand(ws.prompt);
+    const interactive = typeof agent.encodeInput === "function";
     ws.status = "running";
+    ws.awaitingInput = false;
     this.append(
       ws,
       `$ ${cmd} ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`,
@@ -185,7 +188,9 @@ export class WorkspaceManager extends EventEmitter {
       child = spawn(cmd, args, {
         cwd: ws.path,
         env: { ...process.env, ...env },
-        stdio: ["ignore", "pipe", "pipe"],
+        // Interactive agents keep stdin open so we can stream the prompt and
+        // later replies in; one-shot agents get no stdin at all.
+        stdio: [interactive ? "pipe" : "ignore", "pipe", "pipe"],
       });
     } catch (err) {
       ws.status = "error";
@@ -196,9 +201,17 @@ export class WorkspaceManager extends EventEmitter {
 
     this.procs.set(ws.id, child);
 
+    // Deliver the initial prompt as the session's first message.
+    if (interactive && child.stdin) {
+      child.stdin.write(agent.encodeInput!(ws.prompt));
+    }
+
     const onLine = (raw: string) => {
+      const turnEnded = interactive && agent.turnEnded?.(raw);
+      if (turnEnded) ws.awaitingInput = true;
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
       if (pretty != null) this.append(ws, pretty);
+      else if (turnEnded) this.touch();
     };
     if (child.stdout)
       readline.createInterface({ input: child.stdout }).on("line", onLine);
@@ -216,6 +229,7 @@ export class WorkspaceManager extends EventEmitter {
     });
     child.on("close", (code) => {
       ws.exitCode = code ?? 0;
+      ws.awaitingInput = false;
       if (ws.status === "running") ws.status = code === 0 ? "done" : "error";
       this.procs.delete(ws.id);
       this.append(ws, `\n[agent exited with code ${code}]`);
@@ -224,6 +238,32 @@ export class WorkspaceManager extends EventEmitter {
 
   isRunning(id: string): boolean {
     return this.procs.has(id);
+  }
+
+  /** Whether `id` is a running interactive agent that can take a typed reply. */
+  acceptsInput(id: string): boolean {
+    const child = this.procs.get(id);
+    const ws = this.workspaces.get(id);
+    if (!child?.stdin?.writable || !ws) return false;
+    return typeof getAgent(ws.agentId).encodeInput === "function";
+  }
+
+  /**
+   * Send a user's reply to a running interactive agent — the way to answer a
+   * question it asked or steer it further. The message is echoed into the
+   * output buffer so the transcript reflects the exchange. Returns false if the
+   * workspace can't currently take input.
+   */
+  sendInput(id: string, text: string): boolean {
+    const child = this.procs.get(id);
+    const ws = this.workspaces.get(id);
+    if (!child?.stdin?.writable || !ws) return false;
+    const agent = getAgent(ws.agentId);
+    if (!agent.encodeInput) return false;
+    child.stdin.write(agent.encodeInput(text));
+    ws.awaitingInput = false;
+    this.append(ws, `❯ ${text}`);
+    return true;
   }
 
   stop(id: string): void {

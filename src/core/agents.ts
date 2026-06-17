@@ -13,23 +13,30 @@ async function onPath(bin: string): Promise<boolean> {
 }
 
 /**
- * Claude Code, headless. Emits stream-json events which we flatten into
- * readable lines. Runs with acceptEdits so it can modify files in the
- * isolated worktree without blocking on permission prompts.
+ * Claude Code, headless, as a persistent interactive session. We use
+ * stream-json on *both* sides: events stream out and get flattened into
+ * readable lines, while the initial prompt and any later replies stream in over
+ * stdin as JSON user messages. Keeping stdin open is what lets you answer
+ * questions the agent asks and continue the conversation; the process stays
+ * alive between turns rather than exiting after one. Runs with acceptEdits so
+ * it can edit files in the isolated worktree without blocking on prompts.
  */
 const claude: AgentBackend = {
   id: "claude",
   displayName: "Claude Code",
   isAvailable: () => onPath("claude"),
-  buildCommand(prompt) {
+  buildCommand() {
     const extra = (process.env.CONDUCT_CLAUDE_ARGS ?? "")
       .split(" ")
       .filter(Boolean);
     return {
       cmd: "claude",
+      // No positional prompt: in stream-json input mode the prompt (and every
+      // follow-up) arrives over stdin via encodeInput below.
       args: [
         "-p",
-        prompt,
+        "--input-format",
+        "stream-json",
         "--output-format",
         "stream-json",
         "--verbose",
@@ -38,6 +45,23 @@ const claude: AgentBackend = {
         ...extra,
       ],
     };
+  },
+  encodeInput(text) {
+    return (
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text }] },
+      }) + "\n"
+    );
+  },
+  turnEnded(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    try {
+      return JSON.parse(trimmed).type === "result";
+    } catch {
+      return false;
+    }
   },
   parseLine(line) {
     const trimmed = line.trim();
@@ -85,23 +109,35 @@ const codex: AgentBackend = {
 
 /**
  * A scripted fake agent. Useful for building/testing the UI without spending
- * API tokens: it streams a few lines then writes a file so there is a diff to
- * review and merge.
+ * API tokens: it writes a file so there is a diff to review and merge, then —
+ * like the real interactive agents — keeps reading stdin and echoes each reply
+ * back, so the answer-a-question flow can be exercised end to end. Each line we
+ * write to its stdin is a bare line of text (see encodeInput).
  */
 const mock: AgentBackend = {
   id: "mock",
   displayName: "Mock (test runner)",
   isAvailable: async () => true,
-  buildCommand(prompt) {
+  buildCommand() {
     const script = [
-      `echo "thinking about: ${prompt.replace(/"/g, "'")}"`,
-      "sleep 1",
       'echo "writing CONDUCT_NOTES.md"',
-      `printf '# Conduct\\n\\nPrompt was: %s\\n' "${prompt.replace(/"/g, "'")}" > CONDUCT_NOTES.md`,
-      "sleep 1",
-      'echo "done"',
+      "printf '# Conduct\\n' > CONDUCT_NOTES.md",
+      // Read the initial prompt, then loop on follow-up replies, ending each
+      // turn with a sentinel the manager treats as "awaiting input".
+      'while IFS= read -r line; do echo "you said: $line"; printf "%s\\n" "$line" >> CONDUCT_NOTES.md; echo "@@turn-end@@"; done',
     ].join(" && ");
     return { cmd: "bash", args: ["-c", script] };
+  },
+  encodeInput(text) {
+    // Bash `read` is line-oriented, so collapse newlines into spaces.
+    return text.replace(/\r?\n/g, " ") + "\n";
+  },
+  turnEnded(line) {
+    return line.trim() === "@@turn-end@@";
+  },
+  parseLine(line) {
+    // Hide the internal turn-end sentinel from the output view.
+    return line.trim() === "@@turn-end@@" ? null : line;
   },
 };
 

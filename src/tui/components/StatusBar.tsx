@@ -12,7 +12,7 @@ interface Props {
 const HINTS: Record<string, string> = {
   list: "n new · ↑/↓ select · ↵ open · d diff · m merge · s stop · R restart · x archive · q quit",
   detail:
-    "↵/o output · d diff · ↑/↓ scroll · m merge · s stop · R restart · r refresh · esc back",
+    "↵/o output · d diff · i reply · ↑/↓ scroll · m merge · s stop · R restart · r refresh · esc back",
   new: "fill the form · esc cancel",
 };
 

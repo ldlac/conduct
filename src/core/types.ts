@@ -20,6 +20,12 @@ export interface Workspace {
   status: WorkspaceStatus;
   /** Rolling buffer of agent output lines (most recent last). */
   output: string[];
+  /**
+   * For interactive agents (see {@link AgentBackend.encodeInput}): the agent
+   * has finished a turn and is idle, waiting for the user to reply. Transient —
+   * never true for a workspace whose process isn't running.
+   */
+  awaitingInput?: boolean;
   exitCode?: number;
   error?: string;
   createdAt: number;
@@ -30,7 +36,11 @@ export interface AgentBackend {
   displayName: string;
   /** Resolve whether the underlying CLI is installed and runnable. */
   isAvailable(): Promise<boolean>;
-  /** Build the child-process invocation for a given prompt. */
+  /**
+   * Build the child-process invocation. For interactive agents (those that
+   * define {@link encodeInput}) the prompt is delivered over stdin instead, so
+   * `prompt` need not be baked into the args.
+   */
   buildCommand(prompt: string): {
     cmd: string;
     args: string[];
@@ -38,4 +48,16 @@ export interface AgentBackend {
   };
   /** Optionally turn one raw stdout line into a human-readable line. */
   parseLine?(line: string): string | null;
+  /**
+   * If defined, the agent runs as a persistent interactive session: its stdin
+   * is kept open and this turns a user's reply (and the initial prompt) into
+   * the bytes to write to stdin. Returning the message lets the user answer
+   * questions the agent asks and keep the conversation going.
+   */
+  encodeInput?(text: string): string;
+  /**
+   * For interactive agents: does this raw stdout line mark the end of a turn,
+   * i.e. the agent is now idle and awaiting the user's next message?
+   */
+  turnEnded?(line: string): boolean;
 }
