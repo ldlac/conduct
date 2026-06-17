@@ -145,8 +145,17 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       if (!ws) return;
       flash(`merging ${ws.title}…`);
       try {
-        await manager.merge(ws.id);
-        flash(`merged ${ws.title} into ${manager.baseBranch}`);
+        const result = await manager.merge(ws.id);
+        if (result.ok) {
+          flash(`merged ${ws.title} into ${manager.baseBranch}`);
+        } else {
+          const files = result.conflicts ?? [];
+          const shown = files.slice(0, 3).join(", ");
+          const more = files.length > 3 ? ` +${files.length - 3} more` : "";
+          flash(
+            `merge conflict in ${files.length} file${files.length === 1 ? "" : "s"} (${shown}${more}) — ${manager.baseBranch} left untouched; resolve in the worktree (c) and retry`,
+          );
+        }
       } catch (err) {
         flash(`merge failed: ${err instanceof Error ? err.message : err}`);
       }

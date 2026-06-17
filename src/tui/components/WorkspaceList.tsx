@@ -197,6 +197,12 @@ export function WorkspaceList({ items, selectedIndex, width }: Props) {
                   ⏸
                 </Text>
               )}
+              {ws.conflicts && ws.conflicts.length > 0 && (
+                <Text color="red" bold>
+                  {" "}
+                  ⚠
+                </Text>
+              )}
             </Box>
           </React.Fragment>
         );

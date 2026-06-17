@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs/promises";
 
-import { Git } from "./git.js";
+import { Git, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
 import type { TokenUsage, Workspace } from "./types.js";
@@ -182,6 +182,9 @@ export class WorkspaceManager extends EventEmitter {
     ws.status = "running";
     ws.awaitingInput = false;
     ws.pendingPermission = undefined;
+    // The agent is about to change the worktree, so any conflict list from an
+    // earlier merge attempt is now stale — drop it.
+    ws.conflicts = undefined;
     this.append(
       ws,
       `$ ${cmd} ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`,
@@ -334,6 +337,9 @@ export class WorkspaceManager extends EventEmitter {
     if (!agent.encodeInput) return false;
     child.stdin.write(agent.encodeInput(text));
     ws.awaitingInput = false;
+    // A reply starts a new turn that may rewrite the worktree, so a conflict
+    // list from a prior merge attempt no longer reflects reality.
+    ws.conflicts = undefined;
     // A reply kicks off a new turn: the agent is working again until it ends
     // the turn (see onLine), so reflect that unless it's already terminal.
     if (ws.status === "done" || ws.status === "stopped") ws.status = "running";
@@ -400,8 +406,16 @@ export class WorkspaceManager extends EventEmitter {
     return diff;
   }
 
-  /** Commit any pending work in the worktree, then merge the branch into base. */
-  async merge(id: string): Promise<void> {
+  /**
+   * Commit any pending work in the worktree, then merge the branch into base.
+   *
+   * Returns the {@link MergeResult}: on a clean merge the workspace flips to
+   * `merged`; on conflict the merge has already been rolled back (base is
+   * untouched), the workspace stays reviewable, and the conflicting files are
+   * recorded on {@link Workspace.conflicts} so the UI can show them and the
+   * user can resolve in the worktree (press `c`) and retry.
+   */
+  async merge(id: string): Promise<MergeResult> {
     const ws = this.workspaces.get(id);
     if (!ws) throw new Error("No such workspace");
     if (ws.status === "running")
@@ -413,9 +427,19 @@ export class WorkspaceManager extends EventEmitter {
     if (this.isRunning(id)) this.stop(id);
 
     await this.git.commitAll(ws.path, `conduct: ${ws.title}`);
-    await this.git.merge(ws.branch, `Merge conduct workspace: ${ws.title}`);
+    const result = await this.git.merge(
+      ws.branch,
+      `Merge conduct workspace: ${ws.title}`,
+    );
+    if (!result.ok) {
+      ws.conflicts = result.conflicts;
+      this.touch();
+      return result;
+    }
+    ws.conflicts = undefined;
     ws.status = "merged";
     this.touch();
+    return result;
   }
 
   /** Stop the agent, tear down the worktree and branch, and forget the workspace. */

@@ -7,6 +7,18 @@ export interface RunResult {
   stderr: string;
 }
 
+/** Outcome of attempting to merge a workspace branch into the base branch. */
+export interface MergeResult {
+  /** True when the branch merged cleanly into base. */
+  ok: boolean;
+  /**
+   * Paths that conflicted, set only when `ok` is false. The partial merge has
+   * already been rolled back by the time this is returned, so these name the
+   * files that need manual resolution in the worktree before a retry can land.
+   */
+  conflicts?: string[];
+}
+
 /** Run a command, capturing output. Never rejects on non-zero exit. */
 export function run(
   cmd: string,
@@ -141,8 +153,45 @@ export class Git {
     return true;
   }
 
-  /** Merge `branch` into the repo's current branch (no fast-forward). */
-  async merge(branch: string, message: string): Promise<void> {
-    await git(["merge", "--no-ff", "-m", message, branch], this.root);
+  /**
+   * Merge `branch` into the repo's current branch (no fast-forward).
+   *
+   * Returns `{ ok: true }` on a clean merge. When the merge conflicts, the
+   * half-finished merge is rolled back with `git merge --abort` so the base
+   * checkout is left exactly as it was — never stranded mid-merge with conflict
+   * markers and `MERGE_HEAD` set — and `{ ok: false, conflicts }` lists the
+   * unmerged paths for the caller to surface. Any other failure (a bad ref, or
+   * git refusing to start because the base tree is dirty) still throws, since
+   * those aren't conflicts the user resolves in the workspace.
+   */
+  async merge(branch: string, message: string): Promise<MergeResult> {
+    const res = await run(
+      "git",
+      ["merge", "--no-ff", "-m", message, branch],
+      this.root,
+    );
+    if (res.code === 0) return { ok: true };
+    // A non-zero exit is either a conflict or a refusal to even start the merge.
+    // Only a conflict leaves unmerged paths behind, so use their presence to
+    // tell the two apart.
+    const unmerged = await run(
+      "git",
+      ["diff", "--name-only", "--diff-filter=U"],
+      this.root,
+    );
+    const conflicts = unmerged.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (conflicts.length === 0) {
+      throw new Error(
+        `git merge ${branch} failed (${res.code}): ${res.stderr.trim() || res.stdout.trim()}`,
+      );
+    }
+    // Roll the conflicted merge back so the base checkout is untouched. Best
+    // effort: if the abort itself somehow fails there's nothing more we can do
+    // here, and the returned conflicts still tell the user what happened.
+    await run("git", ["merge", "--abort"], this.root);
+    return { ok: false, conflicts };
   }
 }
