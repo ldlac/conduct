@@ -207,11 +207,14 @@ export class WorkspaceManager extends EventEmitter {
     }
 
     const onLine = (raw: string) => {
-      const turnEnded = interactive && agent.turnEnded?.(raw);
-      if (turnEnded) ws.awaitingInput = true;
+      // Only flag "awaiting input" when the agent ended its turn by asking
+      // something. A turn that merely finished the job leaves the session idle
+      // but doesn't nag the user for a reply.
+      const awaitsReply = interactive && agent.awaitsReply?.(raw);
+      if (awaitsReply) ws.awaitingInput = true;
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
       if (pretty != null) this.append(ws, pretty);
-      else if (turnEnded) this.touch();
+      else if (awaitsReply) this.touch();
     };
     if (child.stdout)
       readline.createInterface({ input: child.stdout }).on("line", onLine);

@@ -86,8 +86,10 @@ Interactive agents (Claude Code, and the `mock` test runner) run as a
 persistent session rather than one-shot, so you can talk back to them. When an
 agent asks a question or you want to steer it, open the workspace and press `i`
 to reply: type a message and `↵` sends it to the agent's stdin (`esc` cancels).
-While an agent is idle between turns the detail header shows
-`awaiting input (i to reply)`.
+When an agent ends a turn by asking a question the detail header shows
+`awaiting input (i to reply)`. A turn that just finishes the work does not flag
+this (the agent isn't waiting on you), but the session stays alive so you can
+still press `i` to steer it further.
 
 Because the session stays alive across turns, an interactive agent keeps the
 `running` status until you stop it (`s`) — stop it before merging, as before.

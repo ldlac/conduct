@@ -22,8 +22,11 @@ export interface Workspace {
   output: string[];
   /**
    * For interactive agents (see {@link AgentBackend.encodeInput}): the agent
-   * has finished a turn and is idle, waiting for the user to reply. Transient —
-   * never true for a workspace whose process isn't running.
+   * finished a turn by asking the user something and is now idle, waiting for a
+   * reply. A turn that simply completed the work (no question) does not set
+   * this — the session stays alive and can still be replied to, but the UI
+   * won't nag for input. Transient — never true for a workspace whose process
+   * isn't running.
    */
   awaitingInput?: boolean;
   exitCode?: number;
@@ -56,8 +59,10 @@ export interface AgentBackend {
    */
   encodeInput?(text: string): string;
   /**
-   * For interactive agents: does this raw stdout line mark the end of a turn,
-   * i.e. the agent is now idle and awaiting the user's next message?
+   * For interactive agents: does this raw stdout line end a turn with the agent
+   * waiting on the user — i.e. it asked a question and now needs a reply to
+   * continue? A turn that just finished the job (no question) should return
+   * false: the session stays alive, but the UI should not prompt for input.
    */
-  turnEnded?(line: string): boolean;
+  awaitsReply?(line: string): boolean;
 }
