@@ -117,6 +117,7 @@ pnpm start ../my-repo   # or point at another repo
 | `↵`                | open workspace (live output)                   |
 | `d`                | open workspace on the diff view                |
 | `/`                | filter the list by title (↵ apply · esc clear) |
+| `Tab`              | cycle sort mode (group / A–Z / newest / oldest) |
 | `Space`            | toggle mark on the selected workspace          |
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Box, useApp, useInput, useStdout } from "ink";
 import { sumUsage, type WorkspaceManager } from "../core/manager.js";
-import type { AttentionReason, Workspace } from "../core/types.js";
-import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
+import type { AttentionReason, SortMode, Workspace } from "../core/types.js";
+import { SORT_LABELS, WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
 import {
   DetailPane,
   detailBodyHeight,
@@ -87,6 +87,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When true, the keybinding cheat-sheet takes over the screen until any key is
   // pressed. Toggled with `?`.
   const [showHelp, setShowHelp] = useState(false);
+  // Sort mode for the workspace list. Toggled with Tab from the list view;
+  // group (lifecycle stage then creation time) is the default.
+  const [sortMode, setSortMode] = useState<SortMode>("group");
   // Marked workspace ids for batch operations. Toggled with Space; when marks
   // exist, merge/archive/restart operate on every marked workspace instead of
   // the single selected one. Cleared explicitly (Esc) or after a batch action.
@@ -165,8 +168,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     const matched = q
       ? items.filter((w) => w.title.toLowerCase().includes(q))
       : items;
-    return sortWorkspaces(matched);
-  }, [items, filter]);
+    return sortWorkspaces(matched, sortMode);
+  }, [items, filter, sortMode]);
   // Session-wide token/cost tally for the status bar.
   const sessionUsage = useMemo(() => sumUsage(items), [items]);
   const selectedIndex = Math.max(
@@ -526,6 +529,13 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           void loadDiff(current);
         } else if (input === "/") {
           setFiltering(true);
+        } else if (key.tab) {
+          const cycle: SortMode[] = ["group", "alpha", "newest", "oldest"];
+          const idx = cycle.indexOf(sortMode);
+          const next = cycle[(idx + 1) % cycle.length];
+          setSortMode(next);
+          flash(`sort: ${SORT_LABELS[next]}`);
+          return;
         }
         return;
       }
@@ -616,6 +626,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           width={listWidth}
           now={now}
           filter={filter}
+          sortLabel={SORT_LABELS[sortMode]}
           marks={marks}
         />
         <DetailPane

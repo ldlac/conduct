@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type {
   DiffStat,
+  SortMode,
   TokenUsage,
   Workspace,
   WorkspaceStatus,
@@ -120,18 +121,37 @@ export function groupLabel(status: WorkspaceStatus): string {
   return GROUPS[groupIndex(status)]?.label ?? "Other";
 }
 
+/** Human-readable label for each sort mode, shown in the list header. */
+export const SORT_LABELS: Record<SortMode, string> = {
+  group: "group",
+  alpha: "A–Z",
+  newest: "newest",
+  oldest: "oldest",
+};
+
 /**
  * Order workspaces by lifecycle group (see {@link GROUPS}), then by creation
  * time within each group. Stable and pure, so callers can rely on the same
  * ordering for both rendering and selection bookkeeping.
  */
-export function sortWorkspaces(items: Workspace[]): Workspace[] {
-  return [...items].sort((a, b) => {
-    const ga = groupIndex(a.status);
-    const gb = groupIndex(b.status);
-    if (ga !== gb) return ga - gb;
-    return a.createdAt - b.createdAt;
-  });
+export function sortWorkspaces(items: Workspace[], sortMode?: SortMode): Workspace[] {
+  const sorted = [...items];
+  switch (sortMode) {
+    case "alpha":
+      return sorted.sort((a, b) => a.title.localeCompare(b.title));
+    case "newest":
+      return sorted.sort((a, b) => b.createdAt - a.createdAt);
+    case "oldest":
+      return sorted.sort((a, b) => a.createdAt - b.createdAt);
+    case "group":
+    default:
+      return sorted.sort((a, b) => {
+        const ga = groupIndex(a.status);
+        const gb = groupIndex(b.status);
+        if (ga !== gb) return ga - gb;
+        return a.createdAt - b.createdAt;
+      });
+  }
 }
 
 function StatusIcon({ status }: { status: Workspace["status"] }) {
@@ -159,6 +179,8 @@ interface Props {
   now: number;
   /** Active title filter, shown in the header so a narrowed list is obvious. */
   filter?: string;
+  /** Sort mode label to show in the header. */
+  sortLabel?: string;
   /** Set of workspace ids marked for batch operations. */
   marks?: Set<string>;
 }
@@ -169,6 +191,7 @@ export function WorkspaceList({
   width,
   now,
   filter,
+  sortLabel,
   marks,
 }: Props) {
   let prevGroup: string | undefined;
@@ -182,8 +205,11 @@ export function WorkspaceList({
     >
       <Text bold>
         Workspaces ({items.length})
+        {sortLabel && sortLabel !== "group" ? (
+          <Text color="magenta"> [{sortLabel}]</Text>
+        ) : null}
         {marks && marks.size > 0 ? (
-          <Text color="yellow"> · {marks.size} marked (Space)</Text>
+          <Text color="yellow"> · {marks.size} marked</Text>
         ) : null}
         {filter ? <Text color="cyan"> /{filter}</Text> : null}
       </Text>
