@@ -169,7 +169,15 @@ src/
   index.tsx      entrypoint
 ```
 
+## Merging and conflicts
+
+`m` auto-commits any pending work and runs `git merge --no-ff` into the base
+branch. If the merge conflicts, conduct rolls it straight back (`git merge
+--abort`) so your base checkout is never left stranded mid-merge, flags the
+workspace with a red `⚠`, and lists the conflicting files in the detail pane.
+Resolve them by jumping into the worktree (`c`), then press `m` again to retry.
+
 ## Not yet (possible next steps)
 
-Multi-repo, conflict-aware merge UI, and a richer diff browser. The core is
-structured so these slot in around `WorkspaceManager`.
+Multi-repo and a richer diff browser. The core is structured so these slot in
+around `WorkspaceManager`.

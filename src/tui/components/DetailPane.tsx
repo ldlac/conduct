@@ -175,6 +175,12 @@ export function DetailPane({
             <Text color="yellow"> · awaiting input (i to reply)</Text>
           )
         )}
+        {ws.conflicts && ws.conflicts.length > 0 && (
+          <Text color="red" bold>
+            {" · "}⚠ merge conflict ({ws.conflicts.length} file
+            {ws.conflicts.length === 1 ? "" : "s"})
+          </Text>
+        )}
       </Text>
       <Text dimColor>
         {view === "diff" ? "— diff —" : "— output —"}
@@ -199,6 +205,11 @@ export function DetailPane({
         </Box>
       )}
       {ws.error && <Text color="red">error: {ws.error}</Text>}
+      {ws.conflicts && ws.conflicts.length > 0 && (
+        <Text color="red" wrap="truncate-end">
+          merge conflict — resolve in the worktree (c) and retry: {ws.conflicts.join(", ")}
+        </Text>
+      )}
     </Box>
   );
 }

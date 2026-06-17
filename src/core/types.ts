@@ -120,6 +120,16 @@ export interface Workspace {
    * survive a restart even though the live process does not.
    */
   usage?: TokenUsage;
+  /**
+   * Paths that conflicted the last time a merge of this workspace was attempted
+   * (see {@link manager.WorkspaceManager.merge}). The merge is rolled back on
+   * conflict, so the base branch is untouched and the workspace stays
+   * reviewable; this just records what blocked it so the UI can flag the
+   * conflicting files and prompt the user to resolve them in the worktree and
+   * retry. Cleared when the agent starts a new turn (the worktree changes, so a
+   * stale list would mislead) and on a clean merge.
+   */
+  conflicts?: string[];
   exitCode?: number;
   error?: string;
   createdAt: number;
