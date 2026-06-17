@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { spawn } from "node:child_process";
-import { Box, useApp, useInput, useStdout, useStdin } from "ink";
+import { Box, useApp, useInput, useStdout } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { Workspace } from "../core/types.js";
 import { WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
@@ -33,18 +32,26 @@ const SKILL_PROMPT =
 interface Props {
   manager: WorkspaceManager;
   agents: AgentInfo[];
+  // Requests that the host (index.tsx) drop into an interactive shell in this
+  // workspace's worktree. The host unmounts Ink first so the terminal is fully
+  // released to the child shell, then re-renders the app when the shell exits.
+  onShell: (ws: Workspace) => void;
+  // Workspace to pre-select on mount, so returning from a shell lands the
+  // cursor back on the same workspace the user jumped into.
+  initialSelectedId?: string;
 }
 
-export function App({ manager, agents }: Props) {
+export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const { stdin } = useStdin();
 
   const [items, setItems] = useState<Workspace[]>(manager.snapshot());
   // Selection is tracked by workspace id, not list position, so a workspace
   // changing status (and thus moving between groups) keeps the same one
   // highlighted instead of the cursor sticking to a row index.
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(
+    initialSelectedId,
+  );
   const [mode, setMode] = useState<Mode>("list");
   const [view, setView] = useState<View>("output");
   const [diff, setDiff] = useState("");
@@ -56,10 +63,6 @@ export function App({ manager, agents }: Props) {
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
   const [reply, setReply] = useState("");
-  // When set, the TUI is suspended and an interactive shell owns the terminal,
-  // cwd'd into this workspace's worktree so the user can poke at the agent's
-  // work by hand. Cleared (and the TUI restored) when that shell exits.
-  const [shellWs, setShellWs] = useState<Workspace | undefined>();
   const [size, setSize] = useState({
     cols: stdout.columns || 100,
     rows: stdout.rows || 30,
@@ -119,42 +122,6 @@ export function App({ manager, agents }: Props) {
   const flash = useCallback((msg: string) => {
     setMessage(msg);
   }, []);
-
-  // Drop into an interactive shell in the selected worktree. Runs only once
-  // `shellWs` is set and the app has re-rendered to `null` (so Ink has torn
-  // down its input handling and released the terminal): we hand stdio straight
-  // to the child shell, then restore the TUI when it exits. The user returns by
-  // exiting the shell (`exit` / Ctrl-D).
-  useEffect(() => {
-    if (!shellWs) return;
-    const ws = shellWs;
-    const shell = process.env.SHELL || "/bin/bash";
-    // Setting `shellWs` made `useInput` inactive, so Ink has already dropped raw
-    // mode and detached its stdin listener by the time this effect runs. Pause
-    // the stream too so no buffered bytes are stolen from the child shell; Ink
-    // re-enables raw mode on its own once `useInput` reactivates after restore.
-    stdin.pause();
-    stdout.write(`\nconduct: shell in ${ws.path}\n(exit or Ctrl-D to return)\n\n`);
-    const child = spawn(shell, [], {
-      stdio: "inherit",
-      cwd: ws.path,
-      env: process.env,
-    });
-    const restore = () => {
-      stdin.resume();
-      setShellWs(undefined);
-    };
-    child.on("exit", () => {
-      restore();
-      flash(`back from ${ws.title}`);
-    });
-    child.on("error", (err) => {
-      restore();
-      flash(`shell failed: ${err.message}`);
-    });
-    // No cleanup that kills the child: the shell owns the terminal until the
-    // user exits it, which is the only thing that clears `shellWs`.
-  }, [shellWs, stdin, stdout, flash]);
 
   const loadDiff = useCallback(
     async (ws: Workspace | undefined) => {
@@ -271,8 +238,7 @@ export function App({ manager, agents }: Props) {
           } else if (current.status === "archived") {
             flash("worktree was removed (archived)");
           } else {
-            flash(`opening shell in ${current.title}…`);
-            setShellWs(current);
+            onShell(current);
           }
           return;
         }
@@ -341,12 +307,8 @@ export function App({ manager, agents }: Props) {
         return;
       }
     },
-    { isActive: mode !== "new" && !composing && !shellWs },
+    { isActive: mode !== "new" && !composing },
   );
-
-  // While a worktree shell is open, render nothing: Ink stops drawing and
-  // releases the terminal so the child shell has it to itself.
-  if (shellWs) return null;
 
   if (mode === "new") {
     return (
