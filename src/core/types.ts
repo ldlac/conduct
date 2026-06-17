@@ -130,10 +130,35 @@ export interface Workspace {
    * stale list would mislead) and on a clean merge.
    */
   conflicts?: string[];
+  /**
+   * Wall-clock timestamp the agent's current turn started running, used to show
+   * a live elapsed-time badge while it works. Set when a turn begins (initial
+   * launch, a reply, or a restart) and cleared the moment the turn ends, the
+   * process exits, or the workspace is restored from a previous session (the
+   * process didn't survive, so it isn't running). Undefined whenever the agent
+   * isn't actively working.
+   */
+  runStartedAt?: number;
   exitCode?: number;
   error?: string;
   createdAt: number;
 }
+
+/**
+ * Why a workspace newly needs the user's attention, carried on the manager's
+ * `attention` event so the UI can both alert (ring the terminal bell) and say
+ * which workspace and why. Emitted only on the transition into an
+ * attention-worthy state, never repeatedly while it sits there.
+ */
+export type AttentionReason =
+  /** A turn ended with the agent asking a question; it's waiting on a reply. */
+  | "awaiting-input"
+  /** The agent paused on a tool-permission request that must be answered. */
+  | "permission"
+  /** A turn finished the work (no question); the workspace is ready to review. */
+  | "done"
+  /** The agent process exited non-zero. */
+  | "error";
 
 export interface AgentBackend {
   id: string;
