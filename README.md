@@ -47,6 +47,7 @@ branches `conduct` creates are never orphaned. On reload:
 - At least one agent CLI on your `PATH`:
   - [`claude`](https://docs.claude.com/en/docs/claude-code) (Claude Code)
   - [`codex`](https://github.com/openai/codex) (Codex CLI)
+  - [`opencode`](https://opencode.ai) (opencode)
   - a built-in `mock` agent is always available for testing without API tokens
 
 ## Run
@@ -133,6 +134,7 @@ Pass extra CLI flags via env vars:
 ```bash
 CONDUCT_CLAUDE_ARGS="--model claude-opus-4-8" pnpm start
 CONDUCT_CODEX_ARGS="--full-auto" pnpm start
+CONDUCT_OPENCODE_ARGS="--model anthropic/claude-opus-4-8" pnpm start
 ```
 
 Claude Code runs headless with `--permission-mode acceptEdits` so it can edit
@@ -145,7 +147,7 @@ src/
   core/
     types.ts     workspace + agent-backend types
     git.ts       worktree / diff / merge helpers
-    agents.ts    agent registry (claude, codex, mock)
+    agents.ts    agent registry (claude, codex, opencode, mock)
     store.ts     workspace persistence (load/save state across restarts)
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/

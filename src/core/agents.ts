@@ -137,6 +137,27 @@ const codex: AgentBackend = {
 };
 
 /**
+ * opencode CLI, non-interactive. `opencode run <message>` executes a single
+ * turn in print mode and exits; its stdout is already human-readable, so no
+ * stream-json parsing is needed (unlike Claude). It runs as a one-shot like
+ * Codex rather than a persistent stdin session: the prompt is passed as the
+ * positional message, and when the process exits the turn is done and the
+ * workspace becomes reviewable. CONDUCT_OPENCODE_ARGS injects extra flags
+ * (e.g. `--model provider/model`).
+ */
+const opencode: AgentBackend = {
+  id: "opencode",
+  displayName: "opencode",
+  isAvailable: () => onPath("opencode"),
+  buildCommand(prompt) {
+    const extra = (process.env.CONDUCT_OPENCODE_ARGS ?? "")
+      .split(" ")
+      .filter(Boolean);
+    return { cmd: "opencode", args: ["run", ...extra, prompt] };
+  },
+};
+
+/**
  * A scripted fake agent. Useful for building/testing the UI without spending
  * API tokens: it writes a file so there is a diff to review and merge, then —
  * like the real interactive agents — keeps reading stdin and echoes each reply
@@ -180,7 +201,7 @@ const mock: AgentBackend = {
   },
 };
 
-const REGISTRY: AgentBackend[] = [claude, codex, mock];
+const REGISTRY: AgentBackend[] = [claude, codex, opencode, mock];
 
 export function listAgents(): AgentBackend[] {
   return REGISTRY;
