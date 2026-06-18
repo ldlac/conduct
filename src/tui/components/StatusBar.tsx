@@ -4,7 +4,7 @@ import type { TokenUsage } from "../../core/types.js";
 import { usageText } from "./WorkspaceList.js";
 
 interface Props {
-  mode: "list" | "detail" | "new";
+  mode: "list" | "detail" | "new" | "auto-improve";
   view: "output" | "diff";
   message?: string;
   repo: string;
@@ -34,6 +34,7 @@ const HINTS: Record<string, string> = {
   detail:
     "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
+  "auto-improve": "pick an agent · esc cancel",
 };
 
 export function StatusBar({
