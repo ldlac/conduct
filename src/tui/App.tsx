@@ -716,6 +716,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           items={ordered}
           selectedIndex={selectedIndex}
           width={listWidth}
+          height={bodyHeight}
           now={now}
           filter={filter}
           sortLabel={SORT_LABELS[sortMode]}

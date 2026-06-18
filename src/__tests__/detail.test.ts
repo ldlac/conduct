@@ -8,12 +8,12 @@ import {
 } from "../tui/components/DetailPane.js";
 
 describe("detailBodyHeight", () => {
-  it("reserves rows for header and border", () => {
-    expect(detailBodyHeight(20, false)).toBe(16);
+  it("reserves rows for the three-line header and border", () => {
+    expect(detailBodyHeight(20, false)).toBe(15);
   });
 
   it("reduces height when composing", () => {
-    expect(detailBodyHeight(20, true)).toBe(15);
+    expect(detailBodyHeight(20, true)).toBe(14);
   });
 
   it("never goes below 3", () => {

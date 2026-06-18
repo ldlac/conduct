@@ -174,6 +174,9 @@ interface Props {
   items: Workspace[];
   selectedIndex: number;
   width: number;
+  /** Total height of the list box; clipped to this so it never overflows its
+   * row and corrupts the frame below it. */
+  height: number;
   /** Current wall-clock time, threaded in so live runtime badges advance with
    * the caller's render timer. */
   now: number;
@@ -189,6 +192,7 @@ export function WorkspaceList({
   items,
   selectedIndex,
   width,
+  height,
   now,
   filter,
   sortLabel,
@@ -205,11 +209,13 @@ export function WorkspaceList({
     <Box
       flexDirection="column"
       width={width}
+      height={height}
+      overflow="hidden"
       borderStyle="round"
       borderColor="gray"
       paddingX={1}
     >
-      <Text bold>
+      <Text bold wrap="truncate-end">
         Workspaces ({items.length})
         {sortLabel && sortLabel !== "group" ? (
           <Text color="magenta"> [{sortLabel}]</Text>
@@ -246,7 +252,7 @@ export function WorkspaceList({
         return (
           <React.Fragment key={ws.id}>
             {header && (
-              <Text dimColor bold>
+              <Text dimColor bold wrap="truncate-end">
                 {header}{groupCounts.get(header) != null ? ` (${groupCounts.get(header)})` : ""}
               </Text>
             )}

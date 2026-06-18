@@ -57,9 +57,17 @@ function diffColor(line: string): string | undefined {
  * Number of body rows the pane can show, given its total height and whether
  * the reply box is open. Exported so the App can compute scroll bounds with
  * the exact same arithmetic the pane renders with.
+ *
+ * The reserve (5 rows) accounts for the round border (1 row top + 1 bottom) and
+ * the three-line header the pane always renders: the prompt line, the
+ * title/status line, and the "— output —"/position line. The header is rendered
+ * at a fixed height (each line truncated to one row, the prompt row kept even
+ * when empty) so this reserve is exact regardless of content — otherwise a
+ * wrapped header line would make the pane taller than its box and clip body
+ * rows inconsistently as you scroll.
  */
 export function detailBodyHeight(height: number, composing: boolean): number {
-  return Math.max(3, height - 4 - (composing ? 1 : 0));
+  return Math.max(3, height - 5 - (composing ? 1 : 0));
 }
 
 /**
@@ -219,16 +227,23 @@ export function DetailPane({
     <Box
       flexDirection="column"
       width={width}
+      height={height}
+      overflow="hidden"
       borderStyle="round"
       borderColor="gray"
       paddingX={1}
     >
-      {ws.prompt && (
-        <Text dimColor>
-          {ws.prompt.length > 120 ? ws.prompt.slice(0, 120) + "…" : ws.prompt}
-        </Text>
-      )}
-      <Text>
+      {/* Always render the prompt row (blank when there's no prompt) and keep it
+          to a single line, so the header height stays fixed and matches the
+          reserve in detailBodyHeight — see the comment there. */}
+      <Text dimColor wrap="truncate-end">
+        {ws.prompt
+          ? ws.prompt.length > 120
+            ? ws.prompt.slice(0, 120) + "…"
+            : ws.prompt
+          : " "}
+      </Text>
+      <Text wrap="truncate-end">
         <Text bold>{ws.title}</Text>
         <Text dimColor>
           {"  "}
@@ -286,7 +301,7 @@ export function DetailPane({
           </Text>
         ) : null}
       </Text>
-      <Text dimColor>
+      <Text dimColor wrap="truncate-end">
         {view === "diff" ? "— diff —" : followTail ? "— output —" : "— output (paused) —"}
         {diffFilePath && diffFileCount && diffFileCount > 1 ? (
           <Text>
