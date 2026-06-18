@@ -272,6 +272,32 @@ CONDUCT_OPENCODE_ARGS="--model anthropic/claude-opus-4-8" pnpm start
 Claude Code runs headless with `--permission-mode acceptEdits` so it can edit
 files in the isolated worktree without blocking on prompts.
 
+## Configuration
+
+Drop a `conduct.json` at the root of the repo you point conduct at to set
+per-repo defaults. Every field is optional, and an invalid value is ignored
+(with a warning printed at startup) rather than failing the launch:
+
+```json
+{
+  "defaultAgent": "claude",
+  "defaultFanout": 3,
+  "env": { "CONDUCT_CLAUDE_ARGS": "--model claude-opus-4-8" },
+  "agents": {
+    "opencode": { "args": "--model anthropic/claude-opus-4-8" }
+  }
+}
+```
+
+- `defaultAgent` preselects that agent in the new-workspace and auto-improve
+  pickers (it must match an agent id: `claude`, `claude-all`, `codex`,
+  `opencode`, `opencode-all`, or `mock`). If the named agent isn't installed,
+  the picker just starts on the first available one.
+- `defaultFanout` (1 to 8) prefills the "how many parallel workspaces" prompt.
+- `env` injects extra environment variables into every agent process.
+- `agents.<id>.args` appends extra CLI flags for a specific agent, the file
+  equivalent of the `CONDUCT_<AGENT>_ARGS` env vars above.
+
 ## Layout
 
 ```
@@ -281,6 +307,8 @@ src/
     git.ts       worktree / diff / merge helpers
     agents.ts    agent registry (claude, codex, opencode, mock)
     store.ts     workspace persistence (load/save state across restarts)
+    config.ts    per-repo conduct.json (default agent, fan-out, env, agent args)
+    prompt.ts    builds the auto-improve prompt from repo context
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/
     App.tsx      Ink app + keybindings

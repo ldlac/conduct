@@ -660,6 +660,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       <AutoImproveForm
         agents={agents}
         defaultCount={config.defaultFanout}
+        defaultAgentId={config.defaultAgent}
         onCancel={() => setMode("list")}
         onSubmit={(focus, agentId, count) => {
           setMode("list");
@@ -674,6 +675,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       <NewWorkspaceForm
         agents={agents}
         defaultCount={config.defaultFanout}
+        defaultAgentId={config.defaultAgent}
         onCancel={() => setMode("list")}
         onSubmit={async ({ title, prompt, agentId, count }) => {
           setMode("list");
