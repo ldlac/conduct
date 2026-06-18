@@ -127,6 +127,13 @@ export interface Workspace {
   /** Rolling buffer of agent output lines (most recent last). */
   output: string[];
   /**
+   * Optional maximum runtime in milliseconds. When set, the workspace's agent
+   * will be gracefully stopped once its current turn has been running longer
+   * than this. Set from conduct.json `maxRuntime` (in minutes) at creation
+   * time; undefined means no limit.
+   */
+  maxRuntimeMs?: number;
+  /**
    * Last-known size of the worktree's diff against the base branch. Refreshed
    * when a turn ends and when the diff is viewed (not while the agent is
    * actively working), so it reflects the most recent settled state. Undefined
