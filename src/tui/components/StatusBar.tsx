@@ -30,7 +30,7 @@ interface Props {
 }
 
 const HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
