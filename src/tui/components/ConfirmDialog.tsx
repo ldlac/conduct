@@ -20,15 +20,18 @@ export function ConfirmDialog({ message }: Props) {
         paddingY={1}
         borderStyle="round"
         borderColor="yellow"
+        backgroundColor="black"
         width={60}
       >
-        <Text bold color="yellow">
+        <Text bold color="yellow" backgroundColor="black">
           ⚠  Confirm
         </Text>
         <Box marginY={1}>
-          <Text>{message}</Text>
+          <Text backgroundColor="black">{message}</Text>
         </Box>
-        <Text dimColor>y/yes · n/No (or Esc to cancel)</Text>
+        <Text dimColor backgroundColor="black">
+          y/yes · n/No (or Esc to cancel)
+        </Text>
       </Box>
     </Box>
   );
