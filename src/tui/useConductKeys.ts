@@ -48,6 +48,8 @@ export interface HandlerState {
   setRenameText: React.Dispatch<React.SetStateAction<string>>;
   showHelp: boolean;
   setShowHelp: (s: boolean) => void;
+  confirming: { label: string; action: () => void } | null;
+  setConfirming: (c: { label: string; action: () => void } | null) => void;
   sortMode: SortMode;
   setSortMode: (m: SortMode) => void;
   hasMarks: boolean;
@@ -61,7 +63,11 @@ export interface HandlerState {
   searchResults: number[];
   maxScroll: number;
   topNow: number;
+  diffFileIndex: number;
+  setDiffFileIndex: (i: number) => void;
+  diffFiles: Array<{ path: string; content: string }>;
 
+  switchWorkspace: (direction: 1 | -1) => void;
   doMerge: (ws: Workspace | undefined) => void;
   doRestart: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
@@ -88,6 +94,17 @@ export function useConductKeys(s: HandlerState): void {
   useInput(
     (input, key) => {
       s.setMessage(undefined);
+
+      if (s.confirming) {
+        if (input === "y" || input === "Y") {
+          const action = s.confirming.action;
+          s.setConfirming(null);
+          action();
+        } else if (input === "n" || input === "N" || key.escape) {
+          s.setConfirming(null);
+        }
+        return;
+      }
 
       if (s.showHelp) {
         s.setShowHelp(false);
@@ -344,6 +361,8 @@ function handleDetailMode(
     pageUp?: boolean;
     pageDown?: boolean;
     return?: boolean;
+    tab?: boolean;
+    shift?: boolean;
   },
   s: HandlerState,
 ): void {
@@ -364,6 +383,10 @@ function handleDetailMode(
   }
   if (key.escape) {
     s.setMode("list");
+    return;
+  }
+  if (key.tab) {
+    s.switchWorkspace(key.shift ? -1 : 1);
     return;
   }
   if (input === "/") {
@@ -394,6 +417,20 @@ function handleDetailMode(
   if (input === "r" && s.view === "diff") {
     s.loadDiff(s.current);
     return;
+  }
+  if (s.view === "diff" && s.diffFiles.length > 1) {
+    if (input === "[" || input === "{") {
+      s.setDiffFileIndex(Math.max(0, s.diffFileIndex - 1));
+      s.setScroll(0);
+      return;
+    }
+    if (input === "]" || input === "}") {
+      s.setDiffFileIndex(
+        Math.min(s.diffFiles.length - 1, s.diffFileIndex + 1),
+      );
+      s.setScroll(0);
+      return;
+    }
   }
   let next: number | undefined;
   if (key.upArrow || input === "k") next = s.topNow - 1;

@@ -8,9 +8,12 @@ import {
   detailBodyHeight,
   detailTextWidth,
   wrappedRowCount,
+  parseDiffFiles,
+  type DiffFileInfo,
 } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
+import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import {
   NewWorkspaceForm,
   type AgentInfo,
@@ -57,6 +60,10 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   const [mode, setMode] = useState<Mode>("list");
   const [view, setView] = useState<View>("output");
   const [diff, setDiff] = useState("");
+  const [diffFiles, setDiffFiles] = useState<DiffFileInfo[]>([]);
+  const [diffFileIndex, setDiffFileIndex] = useState(0);
+  const currentDiff =
+    diffFiles.length > 0 ? diffFiles[diffFileIndex].content : diff;
   const [scroll, setScroll] = useState(0);
   // Output streams live, so by default the pane follows the tail. Scrolling up
   // pins the view; scrolling back to the bottom re-enables following.
@@ -88,6 +95,16 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When true, the keybinding cheat-sheet takes over the screen until any key is
   // pressed. Toggled with `?`.
   const [showHelp, setShowHelp] = useState(false);
+  // When set, a confirmation dialog is shown for a destructive operation. The
+  // action is only executed if the user confirms with `y`.
+  const [confirming, setConfirming] = useState<{
+    label: string;
+    action: () => void;
+  } | null>(null);
+  const confirmThen = useCallback(
+    (label: string, action: () => void) => setConfirming({ label, action }),
+    [],
+  );
   // Sort mode for the workspace list. Toggled with Tab from the list view;
   // group (lifecycle stage then creation time) is the default.
   const [sortMode, setSortMode] = useState<SortMode>("group");
@@ -192,7 +209,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   const searchResults: number[] = useMemo(() => {
     if (!searchQuery || !current) return [];
     const q = searchQuery.toLowerCase();
-    const lines = view === "diff" ? diff.split("\n") : current.output;
+    const lines = view === "diff" ? (currentDiff || "").split("\n") : current.output;
     const matches: number[] = [];
     let row = 0;
     for (const l of lines) {
@@ -200,7 +217,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       row += Math.max(1, Math.ceil(l.length / textWidth));
     }
     return matches;
-  }, [searchQuery, current, view, diff, textWidth]);
+  }, [searchQuery, current, view, currentDiff, textWidth]);
   const searchCurrentRow =
     searchResults.length > 0 ? searchResults[searchIndex] : -1;
 
@@ -212,8 +229,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // row of a long, wrapped line and the tail lands on the real bottom.
   const sourceLines =
     view === "diff"
-      ? diff
-        ? diff.split("\n")
+      ? currentDiff
+        ? currentDiff.split("\n")
         : ["(no changes yet)"]
       : current?.output.length
         ? current.output
@@ -231,7 +248,10 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     async (ws: Workspace | undefined) => {
       if (!ws) return;
       try {
-        setDiff(await manager.getDiff(ws.id));
+        const fullDiff = await manager.getDiff(ws.id);
+        setDiff(fullDiff);
+        setDiffFiles(parseDiffFiles(fullDiff));
+        setDiffFileIndex(0);
         setScroll(0);
       } catch (err) {
         flash(`diff failed: ${err instanceof Error ? err.message : err}`);
@@ -370,6 +390,16 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     },
     [manager, flash, mode, ordered, selectedIndex],
   );
+  const doArchiveWithConfirm = useCallback(
+    (ws: Workspace | undefined) => {
+      if (!ws) return;
+      confirmThen(
+        `Archive "${ws.title}"? This will stop the agent, delete the worktree, and delete the branch.`,
+        () => doArchive(ws),
+      );
+    },
+    [doArchive, confirmThen],
+  );
 
   const doMergeMany = useCallback(async () => {
     const targets = ordered.filter((w) => markedIds.includes(w.id));
@@ -411,6 +441,17 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     setMode("list");
     flash(`archived ${count} workspace${count === 1 ? "" : "s"}`);
   }, [manager, flash, ordered, markedIds, clearMarks]);
+  const doArchiveManyWithConfirm = useCallback(() => {
+    const targets = ordered.filter((w) => markedIds.includes(w.id));
+    if (targets.length === 0) {
+      flash("no marked workspaces");
+      return;
+    }
+    confirmThen(
+      `Archive all ${targets.length} marked workspace${targets.length === 1 ? "" : "s"}? Each will be stopped, worktree removed, and branch deleted.`,
+      () => doArchiveMany(),
+    );
+  }, [doArchiveMany, confirmThen, ordered, markedIds, flash]);
 
   const doRestartMany = useCallback(async () => {
     const targets = ordered.filter((w) => markedIds.includes(w.id));
@@ -445,6 +486,17 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       flash("no running workspaces");
     }
   }, [manager, items, flash]);
+  const doStopAllRunningWithConfirm = useCallback(() => {
+    const running = items.filter((w) => w.status === "running" || w.status === "creating");
+    if (running.length === 0) {
+      flash("no running workspaces");
+      return;
+    }
+    confirmThen(
+      `Stop all ${running.length} running agent${running.length === 1 ? "" : "s"}? They can be restarted later.`,
+      () => doStopAllRunning(),
+    );
+  }, [doStopAllRunning, confirmThen, items, flash]);
 
   const doArchiveAllMerged = useCallback(async () => {
     const merged = items.filter((w) => w.status === "merged");
@@ -462,6 +514,17 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     setMode("list");
     flash(`archived ${count} merged workspace${count === 1 ? "" : "s"}`);
   }, [manager, flash, items]);
+  const doArchiveAllMergedWithConfirm = useCallback(() => {
+    const merged = items.filter((w) => w.status === "merged");
+    if (merged.length === 0) {
+      flash("no merged workspaces to archive");
+      return;
+    }
+    confirmThen(
+      `Archive all ${merged.length} merged workspace${merged.length === 1 ? "" : "s"}? The worktrees and branches will be removed.`,
+      () => doArchiveAllMerged(),
+    );
+  }, [doArchiveAllMerged, confirmThen, items, flash]);
 
   const doRestartAllStopped = useCallback(async () => {
     const stopped = items.filter((w) => w.status === "stopped" || w.status === "error");
@@ -480,6 +543,21 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     }
     flash(`restarted ${count} of ${stopped.length} workspace${stopped.length === 1 ? "" : "s"}`);
   }, [manager, items, flash]);
+
+  const switchWorkspace = useCallback(
+    (direction: 1 | -1) => {
+      const next = ordered[selectedIndex + direction];
+      if (!next) {
+        flash(direction > 0 ? "no more workspaces" : "already at first workspace");
+        return;
+      }
+      setSelectedId(next.id);
+      if (view === "diff") {
+        loadDiff(next);
+      }
+    },
+    [ordered, selectedIndex, view, loadDiff, setSelectedId, flash],
+  );
 
   useConductKeys({
     manager, agents, onShell,
@@ -502,12 +580,19 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     hasMarks, markedIds, clearMarks, toggleMark,
     current, ordered, selectedIndex,
     searchResults, maxScroll, topNow,
-    doMerge, doRestart, doArchive, doClone, doAutoImprove,
-    doMergeMany, doArchiveMany, doRestartMany, doBroadcast,
-    doStopAllRunning, doArchiveAllMerged, doRestartAllStopped,
+    diffFileIndex, setDiffFileIndex, diffFiles,
+    switchWorkspace,
+    doMerge, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove,
+    doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doBroadcast,
+    doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,
     flash, setMessage, setSelectedId,
+    confirming, setConfirming,
   });
+
+  if (confirming) {
+    return <ConfirmDialog message={confirming.label} />;
+  }
 
   if (showHelp) {
     return <HelpOverlay height={size.rows} />;
@@ -571,7 +656,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         <DetailPane
           ws={current}
           view={view}
-          diff={diff}
+          diff={currentDiff}
           scroll={topNow}
           width={detailWidth}
           height={bodyHeight}
@@ -588,6 +673,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
             setBroadcasting(false);
             setReply("");
           }}
+          diffFilePath={diffFiles[diffFileIndex]?.path}
+          diffFileCount={diffFiles.length}
+          diffFileIndex={diffFileIndex}
           searchQuery={searchQuery}
           searchResults={searchResults}
           searchCurrentRow={searchCurrentRow}
