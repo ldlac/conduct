@@ -45,6 +45,8 @@ const ACTIONS: Binding[] = [
 const DETAIL: Binding[] = [
   { keys: "o / ↵", action: "output view (tails live)" },
   { keys: "d", action: "diff view" },
+  { keys: "/", action: "search the output or diff text" },
+  { keys: "n / N (p)", action: "next / previous search match" },
   { keys: "i", action: "reply to the agent (answer a question)" },
   { keys: "↑/↓ · PgUp/PgDn", action: "scroll" },
   { keys: "r", action: "refresh the diff" },

@@ -25,6 +25,12 @@ interface Props {
   onReplyChange: (v: string) => void;
   onReplySubmit: () => void;
   onReplyCancel: () => void;
+  /** Active search query; when set, matching lines are highlighted. */
+  searchQuery?: string;
+  /** Display-row indices of every search match, in order. */
+  searchResults?: number[];
+  /** Display-row index of the current (active) match, or -1. */
+  searchCurrentRow?: number;
 }
 
 function diffColor(line: string): string | undefined {
@@ -73,6 +79,41 @@ export function wrappedRowCount(lines: string[], width: number): number {
   return n;
 }
 
+/**
+ * Split `text` into segments around case-insensitive matches of `query` and
+ * wrap each segment in a `<Text>` element with the appropriate highlight
+ * styling. The current (active) match uses a cyan background; other matches
+ * use yellow. Non-matching segments are returned as plain strings that can be
+ * slotted into a parent `<Text>` with the row's base color (e.g. green for
+ * diff additions).
+ */
+function highlightText(
+  text: string,
+  query: string,
+  isCurrentMatch: boolean,
+): React.ReactNode {
+  if (!query) return text;
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let idx = lower.indexOf(q);
+  const bg = isCurrentMatch ? "cyan" : "yellow";
+  const fg = "black";
+  while (idx !== -1) {
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      <Text key={idx} backgroundColor={bg} color={fg}>
+        {text.slice(idx, idx + query.length)}
+      </Text>,
+    );
+    last = idx + query.length;
+    idx = lower.indexOf(q, last);
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
 export function DetailPane({
   ws,
   view,
@@ -86,6 +127,9 @@ export function DetailPane({
   onReplyChange,
   onReplySubmit,
   onReplyCancel,
+  searchQuery,
+  searchResults,
+  searchCurrentRow,
 }: Props) {
   // While the reply box is open it owns key input; catch Esc to cancel.
   useInput(
@@ -190,13 +234,29 @@ export function DetailPane({
       <Text dimColor>
         {view === "diff" ? "— diff —" : "— output —"}
         {position}
+        {searchQuery ? (
+          <Text>
+            {" "}/<Text color="cyan">{searchQuery}</Text>/
+            {searchResults && searchResults.length > 0
+              ? ` ${searchCurrentRow !== undefined && searchCurrentRow !== -1 ? searchResults.indexOf(searchCurrentRow) + 1 : 0}/${searchResults.length}`
+              : " 0 matches"}
+          </Text>
+        ) : null}
       </Text>
       <Box flexDirection="column" height={bodyHeight} overflow="hidden">
-        {lines.map((row, i) => (
-          <Text key={i} color={row.color} wrap="truncate-end">
-            {row.text || " "}
-          </Text>
-        ))}
+        {lines.map((row, i) => {
+          const displayRow = top + i;
+          const isMatch = searchQuery && searchResults?.includes(displayRow);
+          const isCurrent =
+            searchCurrentRow !== undefined && displayRow === searchCurrentRow;
+          return (
+            <Text key={i} color={row.color} wrap="truncate-end">
+              {isMatch && searchQuery
+                ? highlightText(row.text, searchQuery, isCurrent)
+                : row.text || " "}
+            </Text>
+          );
+        })}
       </Box>
       {composing && (
         <Box>

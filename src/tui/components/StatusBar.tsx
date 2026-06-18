@@ -23,12 +23,16 @@ interface Props {
   renameText?: string;
   /** Number of workspaces marked for batch operations. */
   markedCount?: number;
+  /** When true, the user is typing a detail-pane search query. */
+  searching?: boolean;
+  /** The live search query text. */
+  searchQuery?: string;
 }
 
 const HINTS: Record<string, string> = {
   list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
   detail:
-    "↵/o output · d diff · c shell · i reply · ↑/↓ scroll · e rename · C clone · m merge · s stop · R restart · ? help · esc back",
+    "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
 };
 
@@ -44,11 +48,20 @@ export function StatusBar({
   renaming,
   renameText,
   markedCount,
+  searching,
+  searchQuery,
 }: Props) {
   const tally = usageText(usage);
   return (
     <Box flexDirection="column">
-      {renaming ? (
+      {searching ? (
+        <Text>
+          <Text color="cyan">search: </Text>
+          {searchQuery}
+          <Text color="cyan">▏</Text>
+          <Text dimColor> (↵ find · esc cancel)</Text>
+        </Text>
+      ) : renaming ? (
         <Text>
           <Text color="cyan">rename: </Text>
           {renameText}

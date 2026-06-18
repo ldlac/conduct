@@ -74,6 +74,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
   const [reply, setReply] = useState("");
+  // Search within the current detail view (output or diff). Typing `/` in detail
+  // mode opens a search box; Enter commits, Esc clears. `n`/`N` cycle matches.
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
   // Incremental title filter for the list. `filtering` is the text-entry mode
   // (typing the query); `filter` is the applied query, which keeps narrowing
   // the list even after the user stops typing, until cleared with esc.
@@ -182,6 +187,26 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // wrapping at the pane's exact text width.
   const listWidth = Math.min(40, Math.floor(size.cols * 0.35));
   const detailWidth = size.cols - listWidth - 2;
+
+  // Search results for the current detail view: display-row indices of every
+  // line that contains the query. Computed from the raw (logical) lines using
+  // the same wrapping arithmetic as the detail pane, so scrolling lands on the
+  // correct visual row.
+  const searchResults: number[] = (() => {
+    if (!searchQuery || !current) return [];
+    const q = searchQuery.toLowerCase();
+    const lines = view === "diff" ? diff.split("\n") : current.output;
+    const textWidth = detailTextWidth(detailWidth);
+    const matches: number[] = [];
+    let row = 0;
+    for (const l of lines) {
+      if (l.toLowerCase().includes(q)) matches.push(row);
+      row += Math.max(1, Math.ceil(l.length / textWidth));
+    }
+    return matches;
+  })();
+  const searchCurrentRow =
+    searchResults.length > 0 ? searchResults[searchIndex] : -1;
 
   // Scroll geometry, shared by the key handler and the render so they agree on
   // the bounds. `bodyHeight` mirrors the value handed to the panes below.
@@ -409,6 +434,26 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         return;
       }
 
+      // While the search box is open (detail mode) it owns the keyboard: type
+      // to build the query, Enter to commit, Esc to abandon.
+      if (searching) {
+        if (key.escape) {
+          setSearching(false);
+          setSearchQuery("");
+        } else if (key.return) {
+          setSearching(false);
+          if (searchResults.length > 0) {
+            setSearchIndex(0);
+            setScroll(searchResults[0]);
+          }
+        } else if (key.backspace || key.delete) {
+          setSearchQuery((q) => q.slice(0, -1));
+        } else if (input && !key.ctrl && !key.meta) {
+          setSearchQuery((q) => q + input);
+        }
+        return;
+      }
+
       if (mode === "list" || mode === "detail") {
         // A pending permission request blocks the selected agent, so answering
         // it takes precedence over the normal bindings: y allows, n denies.
@@ -541,8 +586,31 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       }
 
       if (mode === "detail") {
+        // Search navigation within the detail view: `n` cycles forward through
+        // matches, `N`/`p` cycles backward. Only active when there are results
+        // (pressing n when there are none falls through to the shared binding).
+        if (searchResults.length > 0) {
+          if (input === "n") {
+            const next = (searchIndex + 1) % searchResults.length;
+            setSearchIndex(next);
+            setScroll(searchResults[next]);
+            return;
+          }
+          if (input === "N" || input === "p") {
+            const prev =
+              (searchIndex - 1 + searchResults.length) % searchResults.length;
+            setSearchIndex(prev);
+            setScroll(searchResults[prev]);
+            return;
+          }
+        }
         if (key.escape) {
           setMode("list");
+          return;
+        }
+        if (input === "/") {
+          setSearchQuery("");
+          setSearching(true);
           return;
         }
         if (input === "i") {
@@ -645,6 +713,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
             setComposing(false);
             setReply("");
           }}
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+          searchCurrentRow={searchCurrentRow}
         />
       </Box>
       <StatusBar
@@ -659,6 +730,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         renaming={renaming}
         renameText={renameText}
         markedCount={markedIds.length}
+        searching={searching}
+        searchQuery={searchQuery}
       />
     </Box>
   );
