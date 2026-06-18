@@ -822,9 +822,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         searchQuery={searchQuery}
       />
       {confirming && (
-        <Box position="absolute" width="100%" height="100%">
-          <ConfirmDialog message={confirming.label} />
-        </Box>
+        <ConfirmDialog
+          message={confirming.label}
+          width={size.cols}
+          height={size.rows - 1}
+        />
       )}
     </Box>
   );
