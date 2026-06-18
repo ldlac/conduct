@@ -31,6 +31,9 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "R", description: "restart the agent (selected or all marked)", category: "actions" },
   { keys: "x", description: "archive (selected or all marked)", category: "actions" },
   { keys: "y / n", description: "allow / deny a pending permission request", category: "actions" },
+  { keys: "Alt+a", description: "archive all merged workspaces", category: "actions" },
+  { keys: "Alt+s", description: "stop all running agents", category: "actions" },
+  { keys: "Alt+r", description: "restart all stopped / failed agents", category: "actions" },
 
   // Detail view
   { keys: "o / ↵", description: "output view (tails live)", category: "detail" },
@@ -60,9 +63,9 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
   detail:
     "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
-  "auto-improve": "pick an agent · esc cancel",
+  "auto-improve": "pick focus · pick agent · set count · esc cancel",
 };

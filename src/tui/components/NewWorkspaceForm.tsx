@@ -11,6 +11,7 @@ export interface AgentInfo {
 
 interface Props {
   agents: AgentInfo[];
+  defaultCount?: number;
   onSubmit: (v: {
     title: string;
     prompt: string;
@@ -34,14 +35,14 @@ function parseCount(text: string): number {
   return Math.min(MAX_FANOUT, n);
 }
 
-export function NewWorkspaceForm({ agents, onSubmit, onCancel }: Props) {
+export function NewWorkspaceForm({ agents, defaultCount, onSubmit, onCancel }: Props) {
   const [step, setStep] = useState<Step>("agent");
   const [agentId, setAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
   // How many parallel workspaces to spin up from this one prompt. Kept as the
   // raw text the user typed; coerced through parseCount on launch.
-  const [count, setCount] = useState("1");
+  const [count, setCount] = useState(String(defaultCount && defaultCount >= 1 ? Math.min(defaultCount, MAX_FANOUT) : 1));
 
   useInput((_input, key) => {
     if (key.escape) onCancel();

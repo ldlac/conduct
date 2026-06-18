@@ -9,6 +9,7 @@ import { Git, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
 import type { AttentionReason, TokenUsage, Workspace } from "./types.js";
+import { loadConfig, type ConductConfig } from "./config.js";
 
 const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
@@ -57,11 +58,15 @@ export class WorkspaceManager extends EventEmitter {
   private savePromise: Promise<void> | null = null;
   readonly workspacesRoot: string;
 
+  readonly config: ConductConfig;
+
   private constructor(
     readonly git: Git,
     readonly baseBranch: string,
+    config: ConductConfig,
   ) {
     super();
+    this.config = config;
     const repoName = path.basename(git.root);
     this.workspacesRoot = path.join(
       os.homedir(),
@@ -86,7 +91,8 @@ export class WorkspaceManager extends EventEmitter {
       );
     }
     const baseBranch = await git.currentBranch();
-    const mgr = new WorkspaceManager(git, baseBranch);
+    const cfg = await loadConfig(git.root);
+    const mgr = new WorkspaceManager(git, baseBranch, cfg);
     await fs.mkdir(mgr.workspacesRoot, { recursive: true });
     await mgr.restore();
     return mgr;
@@ -264,11 +270,24 @@ export class WorkspaceManager extends EventEmitter {
       `$ ${cmd} ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`,
     );
 
+    // Apply extra env vars from conduct.json config (overridable by agent-level env).
+    const cfgEnv: NodeJS.ProcessEnv = {};
+    if (this.config.env) Object.assign(cfgEnv, this.config.env);
+    // Apply per-agent extra CLI args from config via the existing env-var convention.
+    const agentCfg = this.config.agents?.[ws.agentId];
+    if (agentCfg?.args) {
+      const varName = `CONDUCT_${ws.agentId.replace(/-/g, "_").toUpperCase()}_ARGS`;
+      const existing = process.env[varName];
+      cfgEnv[varName] = existing
+        ? `${existing} ${agentCfg.args}`
+        : agentCfg.args;
+    }
+
     let child: ChildProcess;
     try {
       child = spawn(cmd, args, {
         cwd: ws.path,
-        env: { ...process.env, ...env },
+        env: { ...process.env, ...cfgEnv, ...env },
         // Interactive agents keep stdin open so we can stream the prompt and
         // later replies in; one-shot agents get no stdin at all.
         stdio: [interactive ? "pipe" : "ignore", "pipe", "pipe"],
