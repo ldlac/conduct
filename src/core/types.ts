@@ -187,6 +187,21 @@ export interface Workspace {
    * isn't actively working.
    */
   runStartedAt?: number;
+  /**
+   * The remote the workspace's branch was last pushed to (see
+   * {@link manager.WorkspaceManager.push}), e.g. "origin". Set on a successful
+   * push and persisted, so the UI can flag a workspace whose work has left the
+   * local machine. Stale in the sense that later commits may not yet be pushed;
+   * it records that a push happened, not that the remote is up to date.
+   */
+  pushedRemote?: string;
+  /**
+   * URL of the pull request opened for this workspace via the GitHub CLI (see
+   * {@link manager.WorkspaceManager.openPullRequest}). Set when `gh pr create`
+   * succeeds (or reports an already-open PR) and persisted, so the link stays
+   * available across restarts and the UI can surface it.
+   */
+  prUrl?: string;
   exitCode?: number;
   error?: string;
   createdAt: number;

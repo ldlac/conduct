@@ -58,9 +58,24 @@ const GIT_TIMEOUT = 30_000;
 /** Longer timeout for slow operations like merge. */
 const GIT_LONG_TIMEOUT = 120_000;
 
+/**
+ * Whether `bin` resolves on the current PATH. Uncached (unlike the agent
+ * registry's own lookup) and dependency-free, so callers like the
+ * push/pull-request flow can probe for an optional CLI (`gh`) at the moment they
+ * need it without coupling to the agents module.
+ */
+export async function commandExists(bin: string): Promise<boolean> {
+  const res = await run("which", [bin]);
+  return res.code === 0 && res.stdout.trim().length > 0;
+}
+
 /** Run git, throwing a useful error on failure. */
-async function git(args: string[], cwd: string): Promise<string> {
-  const res = await run("git", args, cwd, GIT_TIMEOUT);
+async function git(
+  args: string[],
+  cwd: string,
+  timeoutMs: number = GIT_TIMEOUT,
+): Promise<string> {
+  const res = await run("git", args, cwd, timeoutMs);
   if (res.code !== 0) {
     throw new Error(
       `git ${args.join(" ")} failed (${res.code}): ${res.stderr.trim() || res.stdout.trim()}`,
@@ -216,5 +231,38 @@ export class Git {
     // here, and the returned conflicts still tell the user what happened.
     await run("git", ["merge", "--abort"], this.root);
     return { ok: false, conflicts };
+  }
+
+  /** True if `remote` is configured for this repo (i.e. has a URL). */
+  async hasRemote(remote = "origin"): Promise<boolean> {
+    const res = await run("git", ["remote", "get-url", remote], this.root);
+    return res.code === 0 && res.stdout.trim().length > 0;
+  }
+
+  /** The fetch/push URL of `remote`, or null when it isn't configured. */
+  async remoteUrl(remote = "origin"): Promise<string | null> {
+    const res = await run("git", ["remote", "get-url", remote], this.root);
+    if (res.code !== 0) return null;
+    return res.stdout.trim() || null;
+  }
+
+  /**
+   * Push `branch` to `remote`, setting it as the upstream (`-u`) so a later
+   * `git pull`/`gh pr` in the worktree tracks it. Run from the repo root rather
+   * than a worktree: every conduct branch is an ordinary ref in the shared
+   * repository, so the root can push it whether or not its worktree is checked
+   * out. `force` uses `--force-with-lease` (safe-ish force: refuses to clobber
+   * remote work the local ref hasn't seen). Throws on failure so the caller can
+   * surface the git error verbatim.
+   */
+  async push(
+    branch: string,
+    opts: { remote?: string; force?: boolean } = {},
+  ): Promise<void> {
+    const remote = opts.remote ?? "origin";
+    const args = ["push"];
+    if (opts.force) args.push("--force-with-lease");
+    args.push("-u", remote, branch);
+    await git(args, this.root, GIT_LONG_TIMEOUT);
   }
 }

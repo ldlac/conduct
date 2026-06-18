@@ -72,6 +72,7 @@ export interface HandlerState {
 
   switchWorkspace: (direction: 1 | -1) => void;
   doMerge: (ws: Workspace | undefined) => void;
+  doPushPr: (ws: Workspace | undefined) => void;
   doRestart: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
@@ -187,6 +188,13 @@ export function useConductKeys(s: HandlerState): void {
         if (input === "m") {
           if (s.hasMarks) s.doMergeMany();
           else s.doMerge(s.current);
+          return;
+        }
+        // Capital P (lowercase `p` is "previous match" in detail search) pushes
+        // the selected workspace's branch and opens a pull request. Single
+        // workspace only — a PR is inherently per-branch.
+        if (input === "P") {
+          s.doPushPr(s.current);
           return;
         }
         if (input === "s") {

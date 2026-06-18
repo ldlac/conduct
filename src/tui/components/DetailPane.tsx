@@ -276,6 +276,15 @@ export function DetailPane({
             {ws.conflicts.length === 1 ? "" : "s"})
           </Text>
         )}
+        {ws.prUrl ? (
+          <Text color="magenta">
+            {" · "}⇡ PR {ws.prUrl}
+          </Text>
+        ) : ws.pushedRemote ? (
+          <Text dimColor>
+            {" · "}⇡ pushed → {ws.pushedRemote}
+          </Text>
+        ) : null}
       </Text>
       <Text dimColor>
         {view === "diff" ? "— diff —" : followTail ? "— output —" : "— output (paused) —"}

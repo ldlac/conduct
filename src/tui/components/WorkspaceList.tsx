@@ -295,6 +295,17 @@ export function WorkspaceList({
                   ⚠
                 </Text>
               )}
+              {ws.prUrl ? (
+                <Text color="magenta" bold>
+                  {" "}
+                  ⇡PR
+                </Text>
+              ) : ws.pushedRemote ? (
+                <Text dimColor>
+                  {" "}
+                  ⇡
+                </Text>
+              ) : null}
               {marks?.has(ws.id) && (
                 <Text color="yellow" bold>
                   {" "}

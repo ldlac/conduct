@@ -28,6 +28,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "A", description: "auto-improve — analyze repo and improve it autonomously", category: "actions" },
   { keys: "c", description: "jump into a shell in the worktree", category: "actions" },
   { keys: "m", description: "merge (selected or all marked)", category: "actions" },
+  { keys: "P", description: "push branch & open a pull request (needs gh)", category: "actions" },
   { keys: "s", description: "stop the running agent", category: "actions" },
   { keys: "S", description: "ask the agent to turn its work into a skill", category: "actions" },
   { keys: "R", description: "restart the agent (selected or all marked)", category: "actions" },
@@ -68,7 +69,7 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · Ctrl+a mark all · ↑/↓ select · g/G top/bot · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
+  list: "n new · Space mark · Ctrl+a mark all · ↑/↓ select · g/G top/bot · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · P push/PR · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
   detail:
     "↵/o output · d diff · [/] files · g/G top/bot · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
