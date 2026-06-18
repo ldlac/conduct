@@ -618,7 +618,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   });
 
   if (showHelp) {
-    return <HelpOverlay height={size.rows} />;
+    // One row short of full height for the same reason as the main view below:
+    // a frame as tall as the terminal forces Ink into its full-clear repaint.
+    return <HelpOverlay height={size.rows - 1} />;
   }
 
   const config = manager.config;
@@ -665,7 +667,15 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }
 
   return (
-    <Box position="relative" flexDirection="column" height={size.rows}>
+    // Render one row short of the full terminal height. Ink only does its
+    // flicker-free incremental repaint (erase + rewrite just the changed lines)
+    // while the frame is *shorter* than the terminal; the instant the output
+    // height reaches stdout.rows it switches to writing ansiEscapes.clearTerminal
+    // — a full-screen wipe — on every frame, which is the visible flicker. A
+    // streaming agent repaints constantly, so a full-height root box flickers on
+    // every line. Leaving the last row free keeps us on the incremental path.
+    // (The earlier update-throttle only changed how often we repaint, not how.)
+    <Box position="relative" flexDirection="column" height={size.rows - 1}>
       <Box flexDirection="row" height={bodyHeight}>
         <WorkspaceList
           items={ordered}

@@ -46,43 +46,48 @@ export function StatusBar({
   searchQuery,
 }: Props) {
   const tally = usageText(usage);
+  // Every branch below is a single logical line, but some carry variable-length
+  // content (flash messages, the repo path, user-typed queries). Without a wrap
+  // cap a long string would wrap onto extra rows, growing the whole frame to the
+  // terminal's height — which flips Ink into its full-screen-clear repaint and
+  // brings the flicker back. `wrap="truncate"` keeps this box a fixed 2 rows.
   return (
     <Box flexDirection="column">
       {searching ? (
-        <Text>
+        <Text wrap="truncate">
           <Text color="cyan">search: </Text>
           {searchQuery}
           <Text color="cyan">▏</Text>
           <Text dimColor> (↵ find · esc cancel)</Text>
         </Text>
       ) : renaming ? (
-        <Text>
+        <Text wrap="truncate">
           <Text color="cyan">rename: </Text>
           {renameText}
           <Text color="cyan">▏</Text>
           <Text dimColor> (↵ save · esc cancel)</Text>
         </Text>
       ) : filtering ? (
-        <Text>
+        <Text wrap="truncate">
           <Text color="cyan">filter: </Text>
           {filter}
           <Text color="cyan">▏</Text>
           <Text dimColor> (↵ apply · esc clear)</Text>
         </Text>
       ) : message ? (
-        <Text color="yellow">{message}</Text>
+        <Text color="yellow" wrap="truncate">{message}</Text>
       ) : markedCount ? (
-        <Text color="yellow">
+        <Text color="yellow" wrap="truncate">
           {markedCount} marked · Space toggle · Esc clear · m/x/R · i broadcast
         </Text>
       ) : (
-        <Text dimColor>
+        <Text dimColor wrap="truncate">
           {repo} @ {baseBranch}
           {filter && <Text color="cyan"> · /{filter}</Text>}
           {tally && ` · session: ${tally}`}
         </Text>
       )}
-      <Text inverse>
+      <Text inverse wrap="truncate">
         {" "}
         {mode === "detail" ? `[${view}] ` : ""}
         {MODE_HINTS[mode]}{" "}
