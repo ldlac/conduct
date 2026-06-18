@@ -2,6 +2,40 @@ import { run } from "./git.js";
 import type { AgentBackend, PermissionRequest, TokenUsage } from "./types.js";
 
 /**
+ * Known shapes of Claude Code's stream-json protocol events that conduct parses.
+ * These are the fields we reach into across parseControl, awaitsReply,
+ * turnEnded, parseUsage, and parseLine — anything beyond them is ignored.
+ */
+interface ClaudeEvent {
+  type?: string;
+  subtype?: string;
+  request_id?: string | number;
+  request?: {
+    subtype?: string;
+    tool_name?: string;
+    input?: unknown;
+  };
+  result?: string;
+  message?: {
+    role?: string;
+    content?: Array<Record<string, unknown>>;
+  };
+  usage?: Record<string, number>;
+  total_cost_usd?: number;
+}
+
+/** Parse a line as a Claude Code protocol event, or null if it isn't JSON. */
+function parseClaudeEvent(line: string): ClaudeEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as ClaudeEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Heuristic for "the agent's final message asked the user something". Looks at
  * the tail of the text, ignoring trailing whitespace and the closing
  * punctuation/markdown a question might end with (quotes, parens, emphasis), so
@@ -106,41 +140,32 @@ const claude: AgentBackend = {
     );
   },
   parseControl(line) {
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-    let evt: any;
-    try {
-      evt = JSON.parse(trimmed);
-    } catch {
-      return null;
-    }
-    // Only control_request messages are out-of-band; everything else (assistant
-    // text, tool_use, result, …) is normal output handled by parseLine.
-    if (evt.type !== "control_request") return null;
-    const id = String(evt.request_id ?? evt.requestId ?? "");
-    const req = evt.request ?? {};
-    if (req.subtype === "can_use_tool") {
-      const toolName = String(req.tool_name ?? req.toolName ?? "tool");
-      const input = req.input;
-      return {
-        kind: "permission",
-        request: { id, toolName, input, summary: summarizeToolUse(toolName, input) },
-      };
-    }
+    const evt = parseClaudeEvent(line);
+    if (!evt || evt.type !== "control_request") return null;
+    const id = String(evt.request_id ?? "");
+    const req = evt.request;
     // Some other control request the CLI may open mid-session (an init or
     // capability handshake). The user has nothing to decide here, so reply with
     // a bare success to keep the session moving rather than leaving the CLI
     // blocked waiting on a response we'd otherwise never send.
+    if (!req || req.subtype !== "can_use_tool") {
+      return {
+        kind: "ack",
+        reply:
+          JSON.stringify({
+            type: "control_response",
+            response: { subtype: "success", request_id: id, response: {} },
+          }) + "\n",
+      };
+    }
+    const toolName = String(req.tool_name ?? "tool");
+    const input = req.input;
     return {
-      kind: "ack",
-      reply:
-        JSON.stringify({
-          type: "control_response",
-          response: { subtype: "success", request_id: id, response: {} },
-        }) + "\n",
+      kind: "permission",
+      request: { id, toolName, input, summary: summarizeToolUse(toolName, input) },
     };
   },
-  encodePermission(req: PermissionRequest, allow) {
+  encodePermission(req: PermissionRequest, allow: boolean) {
     // Echo the original input back on allow so the agent runs exactly what it
     // asked to; on deny, a short reason the agent can relay or work around.
     const response = allow
@@ -154,30 +179,18 @@ const claude: AgentBackend = {
     );
   },
   awaitsReply(line) {
-    const trimmed = line.trim();
-    if (!trimmed) return false;
-    let evt: any;
-    try {
-      evt = JSON.parse(trimmed);
-    } catch {
-      return false;
-    }
+    const evt = parseClaudeEvent(line);
     // Every turn ends on a `result` event whose `result` field holds the
     // agent's final message. Because the session stays alive between turns, it
     // only genuinely needs the user when that final message asked a question —
     // otherwise the job is simply done and we don't prompt for a reply.
-    if (evt.type !== "result") return false;
+    if (!evt || evt.type !== "result") return false;
     return endsWithQuestion(evt.result);
   },
   turnEnded(line) {
     // Every turn — question or not — ends on a `result` event.
-    const trimmed = line.trim();
-    if (!trimmed) return false;
-    try {
-      return JSON.parse(trimmed).type === "result";
-    } catch {
-      return false;
-    }
+    const evt = parseClaudeEvent(line);
+    return evt?.type === "result";
   },
   parseUsage(line): TokenUsage | null {
     // Usage rides on the same `result` event that ends a turn: the CLI reports
@@ -185,34 +198,21 @@ const claude: AgentBackend = {
     // `total_cost_usd`. Field names mirror the API's usage block; this and the
     // control-protocol fields above are the Claude-specific bits to re-check if
     // a CLI upgrade changes the wire format.
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-    let evt: any;
-    try {
-      evt = JSON.parse(trimmed);
-    } catch {
-      return null;
-    }
-    if (evt.type !== "result") return null;
-    const u = evt.usage ?? {};
+    const evt = parseClaudeEvent(line);
+    if (!evt || evt.type !== "result") return null;
+    const u = evt.usage;
     const num = (v: unknown) => (typeof v === "number" && isFinite(v) ? v : 0);
     return {
-      inputTokens: num(u.input_tokens),
-      outputTokens: num(u.output_tokens),
-      cacheReadTokens: num(u.cache_read_input_tokens),
-      cacheCreationTokens: num(u.cache_creation_input_tokens),
+      inputTokens: u ? num(u.input_tokens) : 0,
+      outputTokens: u ? num(u.output_tokens) : 0,
+      cacheReadTokens: u ? num(u.cache_read_input_tokens) : 0,
+      cacheCreationTokens: u ? num(u.cache_creation_input_tokens) : 0,
       costUsd: num(evt.total_cost_usd),
     };
   },
   parseLine(line) {
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-    let evt: any;
-    try {
-      evt = JSON.parse(trimmed);
-    } catch {
-      return trimmed;
-    }
+    const evt = parseClaudeEvent(line);
+    if (!evt) return line.trim() || null;
     switch (evt.type) {
       case "system":
         return evt.subtype ? `· system: ${evt.subtype}` : null;
@@ -221,9 +221,13 @@ const claude: AgentBackend = {
         const parts = evt.message?.content ?? [];
         const out: string[] = [];
         for (const p of parts) {
-          if (p.type === "text" && p.text?.trim()) out.push(p.text.trim());
-          else if (p.type === "tool_use") out.push(`⚙ ${p.name}`);
-          else if (p.type === "tool_result") out.push("↳ tool result");
+          const text = p.text as string | undefined;
+          const ptype = p.type as string | undefined;
+          if (ptype === "text" && text?.trim()) out.push(text.trim());
+          else if (ptype === "tool_use") {
+            const name = p.name as string | undefined;
+            out.push(`⚙ ${name ?? "tool"}`);
+          } else if (ptype === "tool_result") out.push("↳ tool result");
         }
         return out.length ? out.join("\n") : null;
       }

@@ -138,8 +138,11 @@ export class WorkspaceManager extends EventEmitter {
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       void saveState(this.workspacesRoot, this.baseBranch, this.snapshot()).catch(
-        () => {
-          /* best-effort: a failed background save is retried on the next change */
+        (err: unknown) => {
+          console.error(
+            "conduct: background save failed (will retry on next change):",
+            err instanceof Error ? err.message : String(err),
+          );
         },
       );
     }, SAVE_DEBOUNCE_MS);

@@ -41,8 +41,11 @@ export async function loadState(workspacesRoot: string): Promise<Workspace[]> {
       return [];
     }
     return parsed.workspaces;
-  } catch {
-    // Corrupt or partially written file: start clean rather than crash.
+  } catch (err) {
+    console.error(
+      `conduct: corrupt state file (${statePath(workspacesRoot)}), starting clean:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return [];
   }
 }
