@@ -98,6 +98,34 @@ branches `conduct` creates are never orphaned. On reload:
 - a workspace whose worktree has since been removed on disk is dropped from the
   list.
 
+## Install
+
+Prebuilt standalone binaries (no Node or pnpm needed) are attached to every
+[GitHub Release](https://github.com/ldlac/conduct/releases). Download the one
+for your platform, then mark it executable and put it on your `PATH`.
+
+Linux / macOS:
+
+```bash
+# pick the asset matching your OS/arch: linux-x64, linux-arm64, darwin-x64, darwin-arm64
+curl -L -o conduct https://github.com/ldlac/conduct/releases/latest/download/conduct-darwin-arm64
+chmod +x conduct
+./conduct            # or move it onto your PATH, e.g. /usr/local/bin
+```
+
+On macOS, the binary is unsigned, so clear the quarantine flag the first time:
+`xattr -d com.apple.quarantine conduct`.
+
+Windows: download `conduct-windows-x64.exe` from the release and run it from a
+terminal.
+
+Each release also publishes `SHA256SUMS.txt` so you can verify a download with
+`sha256sum -c SHA256SUMS.txt`.
+
+To build the binaries yourself you need [Bun](https://bun.sh): run
+`pnpm build` (or `bun run scripts/build.ts <target>` for a single platform).
+Output lands in `dist/`.
+
 ## Requirements
 
 - Node 22+ and pnpm (provided by the devenv shell here)
