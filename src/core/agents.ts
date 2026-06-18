@@ -313,6 +313,30 @@ const opencode: AgentBackend = {
 };
 
 /**
+ * opencode with all permission checks bypassed. Same one-shot invocation as
+ * {@link opencode} but injects `permission: "allow"` into opencode's config
+ * via the OPENCODE_CONFIG_CONTENT escape hatch so every tool (Bash, edit,
+ * fetch, etc.) is automatically approved. Use this variant when a task needs
+ * unrestricted tool access — the worktree + merge review remains the safety
+ * boundary. CONDUCT_OPENCODE_ARGS still appends extra flags here too.
+ */
+const opencodeAllPerms: AgentBackend = {
+  ...opencode,
+  id: "opencode-all",
+  displayName: "opencode (all perms)",
+  buildCommand(prompt) {
+    const extra = (process.env.CONDUCT_OPENCODE_ARGS ?? "")
+      .split(" ")
+      .filter(Boolean);
+    return {
+      cmd: "opencode",
+      args: ["run", ...extra, prompt],
+      env: { OPENCODE_CONFIG_CONTENT: '{"permission":"allow"}' },
+    };
+  },
+};
+
+/**
  * A scripted fake agent. Useful for building/testing the UI without spending
  * API tokens: it writes a file so there is a diff to review and merge, then —
  * like the real interactive agents — keeps reading stdin and echoes each reply
@@ -369,7 +393,7 @@ const mock: AgentBackend = {
   },
 };
 
-const REGISTRY: AgentBackend[] = [claude, claudeAllPerms, codex, opencode, mock];
+const REGISTRY: AgentBackend[] = [claude, claudeAllPerms, codex, opencode, opencodeAllPerms, mock];
 
 export function listAgents(): AgentBackend[] {
   return REGISTRY;
