@@ -310,6 +310,32 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
+  const doAutoImprove = useCallback(async () => {
+    flash("analyzing repo…");
+    try {
+      const prompt = await manager.buildAutoImprovePrompt();
+      const agent = agents[0];
+      if (!agent) {
+        flash("no agents available");
+        return;
+      }
+      const created = await manager.createWorkspaces({
+        title: "Auto-improve",
+        prompt,
+        agentId: agent.id,
+        count: 1,
+      });
+      if (created[0]) {
+        setSelectedId(created[0].id);
+        flash(`auto-improve launched with ${agent.displayName}`);
+      }
+    } catch (err) {
+      flash(
+        `auto-improve failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, [manager, flash, agents]);
+
   const doArchive = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -549,6 +575,10 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         }
         if (input === "C") {
           void doClone(current);
+          return;
+        }
+        if (input === "A") {
+          void doAutoImprove();
           return;
         }
         if (input === "?") {

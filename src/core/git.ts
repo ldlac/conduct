@@ -101,6 +101,11 @@ export class Git {
     await run("git", ["branch", "-D", branch], this.root);
   }
 
+  /** Recent `n` commits in oneline format (e.g. for repo context). */
+  async recentLog(n: number): Promise<string> {
+    return git(["log", `-${n}`, "--oneline"], this.root);
+  }
+
   /** Mark untracked files as intent-to-add so they show up in `git diff`. */
   async intentToAdd(worktree: string): Promise<void> {
     await run("git", ["add", "-A", "-N"], worktree);
