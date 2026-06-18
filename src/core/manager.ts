@@ -341,21 +341,30 @@ export class WorkspaceManager extends EventEmitter {
       if (pretty != null) this.append(ws, pretty);
       else if (changed) this.touch();
     };
-    if (child.stdout)
-      readline.createInterface({ input: child.stdout }).on("line", onLine);
+    const rls: readline.Interface[] = [];
+    if (child.stdout) {
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on("line", onLine);
+      rls.push(rl);
+    }
     if (child.stderr) {
-      readline.createInterface({ input: child.stderr }).on("line", (l) => {
+      const rl = readline.createInterface({ input: child.stderr });
+      rl.on("line", (l) => {
         if (l.trim()) this.append(ws, `⚠ ${l}`);
       });
+      rls.push(rl);
     }
 
+    const closeRl = () => { for (const rl of rls) rl.close(); };
     child.on("error", (err) => {
+      closeRl();
       ws.status = "error";
       ws.error = String(err);
       this.procs.delete(ws.id);
       this.touch();
     });
     child.on("close", (code) => {
+      closeRl();
       ws.exitCode = code ?? 0;
       ws.awaitingInput = false;
       // A request from a process that's now gone can never be answered.

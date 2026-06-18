@@ -182,11 +182,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // line that contains the query. Computed from the raw (logical) lines using
   // the same wrapping arithmetic as the detail pane, so scrolling lands on the
   // correct visual row.
-  const searchResults: number[] = (() => {
+  const textWidth = detailTextWidth(detailWidth);
+  const searchResults: number[] = useMemo(() => {
     if (!searchQuery || !current) return [];
     const q = searchQuery.toLowerCase();
     const lines = view === "diff" ? diff.split("\n") : current.output;
-    const textWidth = detailTextWidth(detailWidth);
     const matches: number[] = [];
     let row = 0;
     for (const l of lines) {
@@ -194,7 +194,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       row += Math.max(1, Math.ceil(l.length / textWidth));
     }
     return matches;
-  })();
+  }, [searchQuery, current, view, diff, textWidth]);
   const searchCurrentRow =
     searchResults.length > 0 ? searchResults[searchIndex] : -1;
 
@@ -212,7 +212,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       : current?.output.length
         ? current.output
         : ["(no output yet)"];
-  const totalLines = wrappedRowCount(sourceLines, detailTextWidth(detailWidth));
+  const totalLines = wrappedRowCount(sourceLines, textWidth);
   const maxScroll = Math.max(0, totalLines - viewportRows);
   // While following, the conceptual top is the bottom of the buffer.
   const topNow = view === "output" && followTail ? maxScroll : Math.min(scroll, maxScroll);

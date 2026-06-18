@@ -125,8 +125,9 @@ async function main() {
     // Ink caches one instance per stdout stream; unmount() doesn't reliably
     // evict it, so without this the next render() would reuse the dead instance
     // and the TUI would never come back. cleanup() drops the cache entry so the
-    // loop below builds a fresh instance. Guarded in case the method is absent.
-    (instance as { cleanup?: () => void }).cleanup?.();
+    // loop below builds a fresh instance. Wrapped in try-catch in case Ink ever
+    // removes or renames the method.
+    try { (instance as { cleanup?: () => void }).cleanup?.(); } catch { /* best-effort */ }
     await runShell(shellRequest);
   }
 
