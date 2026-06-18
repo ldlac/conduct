@@ -15,8 +15,9 @@ import {
   NewWorkspaceForm,
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
+import { AutoImproveForm } from "./components/AutoImproveForm.js";
 
-type Mode = "list" | "detail" | "new";
+type Mode = "list" | "detail" | "new" | "auto-improve";
 type View = "output" | "diff";
 
 // Canned prompt sent to the workspace's agent when the user presses `S`. It
@@ -310,24 +311,25 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
-  const doAutoImprove = useCallback(async () => {
+  const doAutoImprove = useCallback(async (agentId?: string) => {
+    const id = agentId ?? agents[0]?.id;
+    if (!id) {
+      flash("no agents available");
+      return;
+    }
+    const agent = agents.find((a) => a.id === id);
     flash("analyzing repo…");
     try {
       const prompt = await manager.buildAutoImprovePrompt();
-      const agent = agents[0];
-      if (!agent) {
-        flash("no agents available");
-        return;
-      }
       const created = await manager.createWorkspaces({
         title: "Auto-improve",
         prompt,
-        agentId: agent.id,
+        agentId: id,
         count: 1,
       });
       if (created[0]) {
         setSelectedId(created[0].id);
-        flash(`auto-improve launched with ${agent.displayName}`);
+        flash(`auto-improve launched with ${agent?.displayName ?? id}`);
       }
     } catch (err) {
       flash(
@@ -578,7 +580,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           return;
         }
         if (input === "A") {
-          void doAutoImprove();
+          if (agents.length === 1) {
+            void doAutoImprove(agents[0].id);
+          } else {
+            setMode("auto-improve");
+          }
           return;
         }
         if (input === "?") {
@@ -682,11 +688,24 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         return;
       }
     },
-    { isActive: mode !== "new" && !composing },
+    { isActive: mode !== "new" && mode !== "auto-improve" && !composing },
   );
 
   if (showHelp) {
     return <HelpOverlay height={size.rows} />;
+  }
+
+  if (mode === "auto-improve") {
+    return (
+      <AutoImproveForm
+        agents={agents}
+        onCancel={() => setMode("list")}
+        onSelect={(agentId) => {
+          setMode("list");
+          void doAutoImprove(agentId);
+        }}
+      />
+    );
   }
 
   if (mode === "new") {
