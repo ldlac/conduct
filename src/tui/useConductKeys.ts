@@ -2,6 +2,7 @@ import React from "react";
 import { useInput, useApp } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { SortMode, Workspace } from "../core/types.js";
+import type { AutoImproveFocus } from "../core/prompt.js";
 import { SORT_LABELS } from "./components/WorkspaceList.js";
 
 const SKILL_PROMPT =
@@ -65,7 +66,7 @@ export interface HandlerState {
   doRestart: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
-  doAutoImprove: (agentId?: string) => void;
+  doAutoImprove: (agentId?: string, focus?: AutoImproveFocus) => void;
   doMergeMany: () => void;
   doArchiveMany: () => void;
   doRestartMany: () => void;
@@ -189,11 +190,7 @@ export function useConductKeys(s: HandlerState): void {
           return;
         }
         if (input === "A") {
-          if (s.agents.length === 1) {
-            s.doAutoImprove(s.agents[0].id);
-          } else {
-            s.setMode("auto-improve");
-          }
+          s.setMode("auto-improve");
           return;
         }
         if (input === "?") {
