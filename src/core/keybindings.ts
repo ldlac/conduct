@@ -17,6 +17,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "/", description: "filter the list by title", category: "list" },
   { keys: "Tab", description: "cycle sort mode (group / A–Z / newest / oldest)", category: "list" },
   { keys: "Space", description: "toggle mark for batch operations", category: "list" },
+  { keys: "i", description: "broadcast a message to all marked agents", category: "list" },
   { keys: "Esc", description: "clear all marks (when any are set)", category: "list" },
 
   // Actions on selected workspace

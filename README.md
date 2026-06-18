@@ -70,9 +70,20 @@ active:
 - `m` merges every marked workspace that is ready to review (status `done` or `stopped`)
 - `x` archives every marked workspace (stops the agent, removes the worktree and branch)
 - `R` restarts every marked workspace
+- `i` broadcasts a follow-up message to every marked agent at once
 
 Marks survive navigation and mode switches. Press `Esc` to clear all marks.
 The status bar shows the mark count and available commands while marks exist.
+
+## Broadcasting to several agents
+
+Fanning a prompt out to N workspaces is only half the story; sometimes you want
+to steer the whole fleet with one follow-up ("also add tests", "use the existing
+logger"). Mark the workspaces you want with `Space`, then press `i` in the list
+to open a broadcast box. The message is sent to every marked workspace that is
+running an interactive agent and waiting; any that aren't are skipped, and the
+status bar reports how many received it. (In the detail view, `i` still replies
+to just the selected agent.)
 
 ## Session persistence
 
@@ -119,6 +130,7 @@ pnpm start ../my-repo   # or point at another repo
 | `/`                | filter the list by title (↵ apply · esc clear) |
 | `Tab`              | cycle sort mode (group / A–Z / newest / oldest) |
 | `Space`            | toggle mark on the selected workspace          |
+| `i`                | broadcast a message to all marked agents        |
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |
 | `c`                | jump into a shell in the workspace's worktree  |
