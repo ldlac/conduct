@@ -604,7 +604,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     renameText, setRenameText,
     showHelp, setShowHelp,
     sortMode, setSortMode,
-    hasMarks, markedIds, clearMarks, toggleMark,
+    hasMarks, markedIds, setMarkedIds, clearMarks, toggleMark,
     current, ordered, selectedIndex,
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
@@ -699,6 +699,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           width={detailWidth}
           height={bodyHeight}
           now={now}
+          followTail={followTail}
           composing={composing}
           broadcastCount={broadcasting ? markedIds.length : 0}
           reply={reply}

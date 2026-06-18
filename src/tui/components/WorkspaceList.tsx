@@ -194,6 +194,12 @@ export function WorkspaceList({
   sortLabel,
   marks,
 }: Props) {
+  // Precompute group counts for display in group headers.
+  const groupCounts = new Map<string, number>();
+  for (const ws of items) {
+    const g = groupLabel(ws.status);
+    groupCounts.set(g, (groupCounts.get(g) ?? 0) + 1);
+  }
   let prevGroup: string | undefined;
   return (
     <Box
@@ -241,7 +247,7 @@ export function WorkspaceList({
           <React.Fragment key={ws.id}>
             {header && (
               <Text dimColor bold>
-                {header}
+                {header}{groupCounts.get(header) != null ? ` (${groupCounts.get(header)})` : ""}
               </Text>
             )}
             <Box>

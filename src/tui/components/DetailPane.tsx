@@ -17,6 +17,8 @@ interface Props {
   scroll: number;
   width: number;
   height: number;
+  /** Whether the output view is auto-scrolling to follow the latest output. */
+  followTail?: boolean;
   /** Current wall-clock time, so the header's live runtime advances on tick. */
   now: number;
   /** Whether the reply box is open (feeds the running agent's stdin). */
@@ -152,6 +154,7 @@ export function DetailPane({
   width,
   height,
   now,
+  followTail,
   composing,
   broadcastCount,
   reply,
@@ -220,6 +223,11 @@ export function DetailPane({
       borderColor="gray"
       paddingX={1}
     >
+      {ws.prompt && (
+        <Text dimColor>
+          {ws.prompt.length > 120 ? ws.prompt.slice(0, 120) + "…" : ws.prompt}
+        </Text>
+      )}
       <Text>
         <Text bold>{ws.title}</Text>
         <Text dimColor>
@@ -270,7 +278,7 @@ export function DetailPane({
         )}
       </Text>
       <Text dimColor>
-        {view === "diff" ? "— diff —" : "— output —"}
+        {view === "diff" ? "— diff —" : followTail ? "— output —" : "— output (paused) —"}
         {diffFilePath && diffFileCount && diffFileCount > 1 ? (
           <Text>
             {" "}[{diffFileIndex != null ? diffFileIndex + 1 : 1}/{diffFileCount}]{" "}
