@@ -42,7 +42,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "Tab / ⇧Tab", description: "switch to next / previous workspace", category: "detail" },
   { keys: "/", description: "search the output or diff text", category: "detail" },
   { keys: "n / N (p)", description: "next / previous search match", category: "detail" },
-  { keys: "i", description: "reply to the agent (answer a question)", category: "detail" },
+  { keys: "i", description: "reply to the agent; opens an option picker when it asked a multiple-choice question", category: "detail" },
   { keys: "↑/↓ · PgUp/PgDn", description: "scroll", category: "detail" },
   { keys: "r", description: "refresh the diff", category: "detail" },
   { keys: "esc", description: "back to the list", category: "detail" },

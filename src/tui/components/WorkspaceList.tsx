@@ -277,6 +277,12 @@ export function WorkspaceList({
                   ⏸
                 </Text>
               )}
+              {ws.pendingQuestion && (
+                <Text color="yellow" bold>
+                  {" "}
+                  ❓
+                </Text>
+              )}
               {ws.conflicts && ws.conflicts.length > 0 && (
                 <Text color="red" bold>
                   {" "}

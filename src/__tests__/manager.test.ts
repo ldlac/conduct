@@ -1,6 +1,53 @@
 import { describe, it, expect } from "vitest";
-import { cloneTitle, sumUsage } from "../core/manager.js";
-import type { TokenUsage, Workspace } from "../core/types.js";
+import { cloneTitle, formatQuestionAnswer, sumUsage } from "../core/manager.js";
+import type { AgentQuestion, TokenUsage, Workspace } from "../core/types.js";
+
+describe("formatQuestionAnswer", () => {
+  const single: AgentQuestion = {
+    questions: [
+      {
+        question: "Tabs or spaces?",
+        header: "Indentation",
+        multiSelect: false,
+        options: [{ label: "Spaces" }, { label: "Tabs" }],
+      },
+    ],
+  };
+
+  it("returns just the picks for a single question", () => {
+    expect(formatQuestionAnswer(single, [["Spaces"]])).toBe("Spaces");
+  });
+
+  it("joins multiple picks with commas", () => {
+    expect(formatQuestionAnswer(single, [["Spaces", "Tabs"]])).toBe("Spaces, Tabs");
+  });
+
+  it("returns an empty string when nothing is selected", () => {
+    expect(formatQuestionAnswer(single, [[]])).toBe("");
+  });
+
+  it("labels each answer by header when there are several questions", () => {
+    const multi: AgentQuestion = {
+      questions: [
+        { question: "q1", header: "Indentation", multiSelect: false, options: [{ label: "Spaces" }] },
+        { question: "q2", header: "Quotes", multiSelect: false, options: [{ label: "Single" }] },
+      ],
+    };
+    expect(formatQuestionAnswer(multi, [["Spaces"], ["Single"]])).toBe(
+      "Indentation: Spaces\nQuotes: Single",
+    );
+  });
+
+  it("omits unanswered questions", () => {
+    const multi: AgentQuestion = {
+      questions: [
+        { question: "q1", header: "Indentation", multiSelect: false, options: [{ label: "Spaces" }] },
+        { question: "q2", header: "Quotes", multiSelect: false, options: [{ label: "Single" }] },
+      ],
+    };
+    expect(formatQuestionAnswer(multi, [["Spaces"], []])).toBe("Indentation: Spaces");
+  });
+});
 
 describe("cloneTitle", () => {
   it("appends (copy) to a plain title", () => {

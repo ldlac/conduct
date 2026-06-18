@@ -1,5 +1,11 @@
 import { run } from "./git.js";
-import type { AgentBackend, PermissionRequest, TokenUsage } from "./types.js";
+import type {
+  AgentBackend,
+  AgentQuestion,
+  PermissionRequest,
+  QuestionItem,
+  TokenUsage,
+} from "./types.js";
 
 /**
  * Known shapes of Claude Code's stream-json protocol events that conduct parses.
@@ -67,6 +73,72 @@ function summarizeToolUse(tool: string, input: unknown): string {
     }
   }
   return tool;
+}
+
+/** The tool Claude Code uses to ask the user a structured, multiple-choice question. */
+const ASK_QUESTION_TOOL = "AskUserQuestion";
+
+/**
+ * Pull a structured {@link AgentQuestion} out of an assistant message that
+ * called the question tool, or null if this event isn't one. Coerces the tool's
+ * raw `input.questions` into our shape, dropping anything malformed; returns
+ * null if no well-formed question with options survives. In headless mode the
+ * CLI auto-denies this tool, so capturing it here is what lets conduct re-ask
+ * the user and feed the answer back as the next turn (see parseQuestion).
+ */
+function extractAskUserQuestion(evt: ClaudeEvent): AgentQuestion | null {
+  if (evt.type !== "assistant") return null;
+  for (const part of evt.message?.content ?? []) {
+    if (part.type !== "tool_use" || part.name !== ASK_QUESTION_TOOL) continue;
+    const input = part.input as { questions?: unknown } | undefined;
+    const raw = Array.isArray(input?.questions) ? input!.questions : [];
+    const questions: QuestionItem[] = [];
+    for (const q of raw) {
+      if (!q || typeof q !== "object") continue;
+      const o = q as Record<string, unknown>;
+      const options = Array.isArray(o.options)
+        ? o.options
+            .map((opt) => {
+              const oo = (opt ?? {}) as Record<string, unknown>;
+              return {
+                label: typeof oo.label === "string" ? oo.label : "",
+                description:
+                  typeof oo.description === "string" ? oo.description : undefined,
+              };
+            })
+            .filter((opt) => opt.label)
+        : [];
+      if (options.length === 0) continue;
+      questions.push({
+        question: typeof o.question === "string" ? o.question : "",
+        header: typeof o.header === "string" ? o.header : "",
+        multiSelect: o.multiSelect === true,
+        options,
+      });
+    }
+    if (questions.length === 0) return null;
+    return { questions, toolUseId: typeof part.id === "string" ? part.id : undefined };
+  }
+  return null;
+}
+
+/**
+ * Render a captured {@link AgentQuestion} as readable transcript lines: the
+ * prompt followed by its numbered options. Falls back to the bare tool label if
+ * the question couldn't be parsed, so a malformed call still leaves a trace.
+ */
+function renderQuestion(q: AgentQuestion | null): string {
+  if (!q) return `⚙ ${ASK_QUESTION_TOOL}`;
+  const lines: string[] = [];
+  for (const item of q.questions) {
+    lines.push(`❓ ${item.question || item.header}`);
+    item.options.forEach((opt, i) => {
+      lines.push(
+        `   ${i + 1}. ${opt.label}${opt.description ? ` — ${opt.description}` : ""}`,
+      );
+    });
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -204,6 +276,10 @@ const claude: AgentBackend = {
       }) + "\n"
     );
   },
+  parseQuestion(line) {
+    const evt = parseClaudeEvent(line);
+    return evt ? extractAskUserQuestion(evt) : null;
+  },
   awaitsReply(line) {
     const evt = parseClaudeEvent(line);
     // Every turn ends on a `result` event whose `result` field holds the
@@ -252,7 +328,14 @@ const claude: AgentBackend = {
           if (ptype === "text" && text?.trim()) out.push(text.trim());
           else if (ptype === "tool_use") {
             const name = p.name as string | undefined;
-            out.push(`⚙ ${name ?? "tool"}`);
+            // Spell out a structured question with its options so the
+            // transcript stays self-explanatory; the header also surfaces it as
+            // a pending question to answer (see manager / parseQuestion).
+            if (name === ASK_QUESTION_TOOL) {
+              out.push(renderQuestion(extractAskUserQuestion(evt)));
+            } else {
+              out.push(`⚙ ${name ?? "tool"}`);
+            }
           } else if (ptype === "tool_result") out.push("↳ tool result");
         }
         return out.length ? out.join("\n") : null;

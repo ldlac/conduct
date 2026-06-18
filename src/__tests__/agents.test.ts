@@ -332,8 +332,96 @@ describe("claude agent", () => {
       const line = '{"type":"result","result":"Task complete."}';
       expect(claude.parseLine!(line)).toBe("\n✓ Task complete.");
     });
+
+    it("renders an AskUserQuestion tool_use as the question and its options", () => {
+      const out = claude.parseLine!(askQuestionLine());
+      expect(out).toContain("❓ Tabs or spaces?");
+      expect(out).toContain("1. Spaces — Use spaces.");
+      expect(out).toContain("2. Tabs — Use tabs.");
+    });
+  });
+
+  describe("parseQuestion", () => {
+    it("returns null for non-assistant events", () => {
+      expect(claude.parseQuestion!('{"type":"result","result":"done"}')).toBeNull();
+    });
+
+    it("returns null for assistant messages without AskUserQuestion", () => {
+      const line = JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "hi" }] },
+      });
+      expect(claude.parseQuestion!(line)).toBeNull();
+    });
+
+    it("extracts the structured question and options", () => {
+      const q = claude.parseQuestion!(askQuestionLine());
+      expect(q).not.toBeNull();
+      expect(q!.toolUseId).toBe("toolu_1");
+      expect(q!.questions).toHaveLength(1);
+      const item = q!.questions[0];
+      expect(item.question).toBe("Tabs or spaces?");
+      expect(item.header).toBe("Indentation");
+      expect(item.multiSelect).toBe(false);
+      expect(item.options.map((o) => o.label)).toEqual(["Spaces", "Tabs"]);
+    });
+
+    it("drops options with no label and questions with no options", () => {
+      const line = JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_2",
+              name: "AskUserQuestion",
+              input: {
+                questions: [
+                  { question: "empty", header: "x", options: [{ description: "no label" }] },
+                  { question: "real", header: "y", options: [{ label: "Yes" }] },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      const q = claude.parseQuestion!(line);
+      expect(q!.questions).toHaveLength(1);
+      expect(q!.questions[0].question).toBe("real");
+    });
   });
 });
+
+/** A realistic AskUserQuestion assistant event line, as emitted in headless mode. */
+function askQuestionLine(): string {
+  return JSON.stringify({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_1",
+          name: "AskUserQuestion",
+          input: {
+            questions: [
+              {
+                question: "Tabs or spaces?",
+                header: "Indentation",
+                multiSelect: false,
+                options: [
+                  { label: "Spaces", description: "Use spaces." },
+                  { label: "Tabs", description: "Use tabs." },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+}
 
 describe("claude-all agent", () => {
   const claudeAll = getAgent("claude-all");

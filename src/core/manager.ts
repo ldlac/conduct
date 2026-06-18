@@ -8,7 +8,12 @@ import fs from "node:fs/promises";
 import { Git, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
-import type { AttentionReason, TokenUsage, Workspace } from "./types.js";
+import type {
+  AgentQuestion,
+  AttentionReason,
+  TokenUsage,
+  Workspace,
+} from "./types.js";
 import { loadConfig, type ConductConfig } from "./config.js";
 
 const MAX_OUTPUT_LINES = 2000;
@@ -114,9 +119,10 @@ export class WorkspaceManager extends EventEmitter {
         ws.status = "stopped";
       }
       ws.awaitingInput = false;
-      // The agent process didn't survive the restart, so any permission it was
-      // blocked on is stale — there's no one to answer.
+      // The agent process didn't survive the restart, so any permission or
+      // question it was blocked on is stale — there's no live session to answer.
       ws.pendingPermission = undefined;
+      ws.pendingQuestion = undefined;
       // Nothing is running, so a stale "started running at" would make the UI
       // tick an elapsed timer for a process that no longer exists.
       ws.runStartedAt = undefined;
@@ -260,6 +266,7 @@ export class WorkspaceManager extends EventEmitter {
     ws.status = "running";
     ws.awaitingInput = false;
     ws.pendingPermission = undefined;
+    ws.pendingQuestion = undefined;
     // Start the turn clock so the UI can show how long this run has been going.
     ws.runStartedAt = Date.now();
     // The agent is about to change the worktree, so any conflict list from an
@@ -328,15 +335,25 @@ export class WorkspaceManager extends EventEmitter {
         }
         return;
       }
+      // A structured multiple-choice question (Claude Code's AskUserQuestion)
+      // arrives mid-turn as an ordinary tool_use the CLI then auto-denies — so
+      // capture it here and hold it on the workspace until the turn ends, when
+      // we surface it as a pending question for the user to answer.
+      let changed = false;
+      const question = agent.parseQuestion?.(raw);
+      if (question) {
+        ws.pendingQuestion = question;
+        changed = true;
+      }
       // An interactive session stays alive between turns, so the process being
       // up no longer means the agent is busy. When a turn ends, flip the idle
       // workspace to `done` (it lands in "Ready to review" and can be merged
       // without a manual stop); a later reply flips it back to `running` (see
       // sendInput). Only flag "awaiting input" when that turn ended on a
-      // question — a turn that merely finished the job shouldn't nag for input.
-      let changed = false;
+      // question — a free-text "…?" (awaitsReply) or a captured structured
+      // question — since a turn that merely finished the job shouldn't nag.
       if (interactive && agent.turnEnded?.(raw)) {
-        ws.awaitingInput = agent.awaitsReply?.(raw) ?? false;
+        ws.awaitingInput = (agent.awaitsReply?.(raw) ?? false) || !!ws.pendingQuestion;
         if (ws.status === "running") ws.status = "done";
         // The turn is over: the agent is idle, so stop its elapsed-time clock.
         ws.runStartedAt = undefined;
@@ -386,8 +403,9 @@ export class WorkspaceManager extends EventEmitter {
       closeRl();
       ws.exitCode = code ?? 0;
       ws.awaitingInput = false;
-      // A request from a process that's now gone can never be answered.
+      // A request or question from a process that's now gone can't be answered.
       ws.pendingPermission = undefined;
+      ws.pendingQuestion = undefined;
       // The process is gone, so the turn clock stops regardless of outcome.
       ws.runStartedAt = undefined;
       if (ws.status === "running") {
@@ -455,6 +473,8 @@ export class WorkspaceManager extends EventEmitter {
     if (!agent.encodeInput) return false;
     child.stdin.write(agent.encodeInput(text));
     ws.awaitingInput = false;
+    // Whatever the reply was, it answers (or supersedes) any pending question.
+    ws.pendingQuestion = undefined;
     // A reply starts a new turn that may rewrite the worktree, so a conflict
     // list from a prior merge attempt no longer reflects reality.
     ws.conflicts = undefined;
@@ -467,6 +487,23 @@ export class WorkspaceManager extends EventEmitter {
     }
     this.append(ws, `❯ ${text}`);
     return true;
+  }
+
+  /**
+   * Answer a workspace's pending structured question (see
+   * {@link Workspace.pendingQuestion}). `selections` holds the chosen option
+   * labels per question, in the same order as `pendingQuestion.questions`. The
+   * picks are formatted into one readable message and sent as the next turn —
+   * the agent's question tool was auto-denied, so the answer simply continues
+   * the conversation. Returns false if there's nothing pending or the agent
+   * can't take input.
+   */
+  answerQuestion(id: string, selections: string[][]): boolean {
+    const ws = this.workspaces.get(id);
+    if (!ws?.pendingQuestion) return false;
+    const text = formatQuestionAnswer(ws.pendingQuestion, selections);
+    if (!text) return false;
+    return this.sendInput(id, text);
   }
 
   /**
@@ -671,6 +708,32 @@ export class WorkspaceManager extends EventEmitter {
       this.saveTimer = null;
     }
   }
+}
+
+/**
+ * Format a user's answer to a structured {@link AgentQuestion} into the message
+ * sent back to the agent. `selections[i]` is the chosen labels for question `i`.
+ * A single question becomes just its picks ("Spaces"); several become one
+ * `header: picks` line each, so the agent can tell which answer goes with which
+ * question. Questions left unanswered (no picks) are omitted. Returns "" when
+ * nothing was selected, so the caller can decline to send an empty turn.
+ */
+export function formatQuestionAnswer(
+  q: AgentQuestion,
+  selections: string[][],
+): string {
+  const lines: string[] = [];
+  q.questions.forEach((item, i) => {
+    const picks = selections[i] ?? [];
+    if (picks.length === 0) return;
+    const joined = picks.join(", ");
+    lines.push(
+      q.questions.length === 1
+        ? joined
+        : `${item.header || item.question}: ${joined}`,
+    );
+  });
+  return lines.join("\n");
 }
 
 /** Add a per-turn usage delta onto a running total, starting from zero. */
