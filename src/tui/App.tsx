@@ -16,6 +16,7 @@ import {
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
 import { AutoImproveForm } from "./components/AutoImproveForm.js";
+import type { AutoImproveFocus } from "../core/prompt.js";
 import { useConductKeys } from "./useConductKeys.js";
 
 type Mode = "list" | "detail" | "new" | "auto-improve";
@@ -325,7 +326,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
-  const doAutoImprove = useCallback(async (agentId?: string) => {
+  const doAutoImprove = useCallback(async (agentId?: string, focus?: AutoImproveFocus) => {
     const id = agentId ?? agents[0]?.id;
     if (!id) {
       flash("no agents available");
@@ -334,7 +335,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     const agent = agents.find((a) => a.id === id);
     flash("analyzing repo…");
     try {
-      const prompt = await manager.buildAutoImprovePrompt();
+      const prompt = await manager.buildAutoImprovePrompt(focus);
       const created = await manager.createWorkspaces({
         title: "Auto-improve",
         prompt,
@@ -463,9 +464,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       <AutoImproveForm
         agents={agents}
         onCancel={() => setMode("list")}
-        onSelect={(agentId) => {
+        onSubmit={(focus, agentId) => {
           setMode("list");
-          void doAutoImprove(agentId);
+          void doAutoImprove(agentId, focus);
         }}
       />
     );

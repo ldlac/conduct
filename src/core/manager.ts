@@ -560,9 +560,13 @@ export class WorkspaceManager extends EventEmitter {
    * improve the codebase autonomously. Delegates to {@link buildAutoImprovePrompt}
    * in `prompt.ts`.
    */
-  async buildAutoImprovePrompt(): Promise<string> {
-    const { buildAutoImprovePrompt: build } = await import("./prompt.js");
-    return build(this.git.root, this.git);
+  async buildAutoImprovePrompt(
+    focus: "general" | "new-features" = "general",
+  ): Promise<string> {
+    const {
+      buildAutoImprovePrompt: build,
+    } = await import("./prompt.js");
+    return build(this.git.root, this.git, focus);
   }
 
   async getDiff(id: string): Promise<string> {

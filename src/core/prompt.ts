@@ -2,13 +2,24 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Git } from "./git.js";
 
+export type AutoImproveFocus = "general" | "new-features";
+
+export const AUTO_IMPROVE_FOCUS_LABELS: Record<AutoImproveFocus, string> = {
+  general: "General improvements",
+  "new-features": "New features",
+};
+
 /**
  * Gather repo context and build a prompt that asks the agent to analyze and
  * improve the codebase autonomously — no manual prompt typing needed. Reads
  * the top-level directory listing, README, package.json (if they exist), and
  * recent git history to ground the agent before it starts work.
  */
-export async function buildAutoImprovePrompt(repoRoot: string, git: Git): Promise<string> {
+export async function buildAutoImprovePrompt(
+  repoRoot: string,
+  git: Git,
+  focus: AutoImproveFocus = "general",
+): Promise<string> {
   const ctx: string[] = [];
 
   try {
@@ -35,6 +46,27 @@ export async function buildAutoImprovePrompt(repoRoot: string, git: Git): Promis
     const log = await git.recentLog(10);
     if (log.trim()) ctx.push(`Recent commits:\n${log}`);
   } catch { /* best-effort */ }
+
+  if (focus === "new-features") {
+    return [
+      // Deliberately do NOT pin the agent to an absolute path. The agent process
+      // is spawned with its cwd set to the workspace's own git worktree; naming
+      // the main checkout's path here would make the agent `cd` out of its
+      // worktree and edit/commit directly on the base branch — exactly the
+      // isolation conduct exists to provide. Refer to the working directory so it
+      // operates wherever it was launched (its worktree).
+      `Analyze and improve this codebase (your current working directory).`,
+      "",
+      ...ctx,
+      "",
+      "First explore the codebase to understand its purpose and architecture.",
+      "Then focus on building new features that would add significant value to",
+      "this project. Look for missing functionality that users would expect,",
+      "identify opportunities for impactful additions, and implement them.",
+      "Prioritize features that align with the project's purpose and provide",
+      "the most value. Work iteratively, implementing one feature at a time.",
+    ].join("\n");
+  }
 
   return [
     // Deliberately do NOT pin the agent to an absolute path. The agent process
