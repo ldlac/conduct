@@ -13,6 +13,7 @@ import {
 } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { QuestionPrompt } from "./components/QuestionPrompt.js";
+import { DiffFileList } from "./components/DiffFileList.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import {
@@ -82,6 +83,10 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // the output/reply box. The picker sends the chosen option(s) back to the
   // agent; see answerCurrent and QuestionPrompt.
   const [answering, setAnswering] = useState(false);
+  // When true, the diff view shows the changed-files overview (opened with `f`)
+  // instead of the diff body: a list of every file the workspace touched with
+  // its own +/- delta, to see the scope at a glance and jump straight to a file.
+  const [showFileList, setShowFileList] = useState(false);
   // When true, the open reply box composes a *broadcast*: the typed message is
   // sent to every marked workspace at once (see doBroadcast) instead of just the
   // selected one. Reuses the same compose box and `reply` buffer as a single
@@ -212,6 +217,19 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   useEffect(() => {
     if (answering && !current?.pendingQuestion) setAnswering(false);
   }, [answering, current]);
+
+  // The file-list overlay only makes sense over a non-empty diff in the detail
+  // view. Close it (and release the keyboard it captures) if any of those stop
+  // holding — leaving the diff view, an empty diff, or no selection — so it can
+  // never strand the UI with nothing to list.
+  useEffect(() => {
+    if (
+      showFileList &&
+      (mode !== "detail" || view !== "diff" || diffFiles.length === 0)
+    ) {
+      setShowFileList(false);
+    }
+  }, [showFileList, mode, view, diffFiles.length]);
 
   // Layout widths, needed up front so the scroll geometry can account for line
   // wrapping at the pane's exact text width.
@@ -623,6 +641,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     followTail, setFollowTail,
     composing, setComposing,
     answering, setAnswering,
+    showFileList, setShowFileList,
     broadcasting, setBroadcasting,
     reply, setReply,
     searching, setSearching,
@@ -728,7 +747,21 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           sortLabel={SORT_LABELS[sortMode]}
           marks={marks}
         />
-        {answering && current?.pendingQuestion ? (
+        {showFileList && current && view === "diff" && diffFiles.length > 0 ? (
+          <DiffFileList
+            files={diffFiles}
+            currentIndex={diffFileIndex}
+            title={current.title}
+            width={detailWidth}
+            height={bodyHeight}
+            onSelect={(idx) => {
+              setDiffFileIndex(idx);
+              setScroll(0);
+              setShowFileList(false);
+            }}
+            onCancel={() => setShowFileList(false)}
+          />
+        ) : answering && current?.pendingQuestion ? (
           <QuestionPrompt
             question={current.pendingQuestion}
             title={current.title}

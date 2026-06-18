@@ -111,4 +111,50 @@ index a..b 100644
     expect(files).toHaveLength(1);
     expect(files[0].path).toBe("file");
   });
+
+  it("counts per-file insertions and deletions, ignoring the +++/--- headers", () => {
+    const diff = `diff --git a/a.ts b/a.ts
+index a..b 100644
+--- a/a.ts
++++ b/a.ts
+@@ -1,2 +1,3 @@
+ keep
+-gone
++added one
++added two`;
+    const [file] = parseDiffFiles(diff);
+    // Two `+` body lines and one `-` body line; the `+++`/`---` headers and the
+    // unchanged " keep" context line must not be counted.
+    expect(file.insertions).toBe(2);
+    expect(file.deletions).toBe(1);
+  });
+
+  it("tracks stats independently across files in a multi-file diff", () => {
+    const file1 = `diff --git a/a.ts b/a.ts
+index a..b 100644
+--- a/a.ts
++++ b/a.ts
+@@ -1 +1,3 @@
++one
++two`;
+    const file2 = `diff --git a/b.ts b/b.ts
+index c..d 100644
+--- a/b.ts
++++ b/b.ts
+@@ -1,2 +1 @@
+-removed`;
+    const files = parseDiffFiles(`${file1}\n${file2}`);
+    expect(files[0]).toMatchObject({ insertions: 2, deletions: 0 });
+    expect(files[1]).toMatchObject({ insertions: 0, deletions: 1 });
+  });
+
+  it("reports zero lines for a binary file (no +/- body lines)", () => {
+    const diff = `diff --git a/img.png b/img.png
+index a..b 100644
+Binary files a/img.png and b/img.png differ`;
+    const [file] = parseDiffFiles(diff);
+    expect(file).toMatchObject({ insertions: 0, deletions: 0 });
+    // It still counts as a changed file even with no line delta.
+    expect(file.path).toBe("img.png");
+  });
 });
