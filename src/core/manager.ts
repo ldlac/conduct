@@ -4,7 +4,6 @@ import readline from "node:readline";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs/promises";
-import { createWriteStream, type WriteStream } from "node:fs";
 
 import { Git, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
@@ -20,12 +19,6 @@ import { loadConfig, type ConductConfig } from "./config.js";
 const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
 const SAVE_DEBOUNCE_MS = 500;
-/**
- * Grace period in milliseconds between SIGINT and SIGTERM when stopping an
- * agent. Gives the process a chance to save state, flush output, and shut down
- * cleanly before we escalate to the hard kill.
- */
-const GRACEFUL_SHUTDOWN_MS = 5_000;
 /**
  * Upper bound on a single fan-out (see {@link WorkspaceManager.createWorkspaces}).
  * Each workspace is a real worktree plus a live agent process, so spinning up an
@@ -65,14 +58,10 @@ export interface CreateOptions {
 export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, Workspace>();
   private procs = new Map<string, ChildProcess>();
-  /** Write streams for persistent output logs (one per workspace). */
-  private logStreams = new Map<string, WriteStream>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** Serializes concurrent save calls so at most one write is in flight. */
   private savePromise: Promise<void> | null = null;
   readonly workspacesRoot: string;
-  /** Directory for persistent output log files. */
-  readonly logsDir: string;
 
   readonly config: ConductConfig;
 
@@ -90,7 +79,6 @@ export class WorkspaceManager extends EventEmitter {
       "worktrees",
       repoName,
     );
-    this.logsDir = path.join(this.workspacesRoot, "logs");
   }
 
   static async open(cwd: string): Promise<WorkspaceManager> {
@@ -111,7 +99,6 @@ export class WorkspaceManager extends EventEmitter {
     const cfg = await loadConfig(git.root);
     const mgr = new WorkspaceManager(git, baseBranch, cfg);
     await fs.mkdir(mgr.workspacesRoot, { recursive: true });
-    await fs.mkdir(mgr.logsDir, { recursive: true });
     await mgr.restore();
     return mgr;
   }
@@ -199,31 +186,12 @@ export class WorkspaceManager extends EventEmitter {
     this.emit("attention", ws, reason);
   }
 
-  private ensureLogStream(ws: Workspace): void {
-    if (this.logStreams.has(ws.id)) return;
-    const logPath = path.join(this.logsDir, `${ws.id}.log`);
-    const stream = createWriteStream(logPath, { flags: "a" });
-    this.logStreams.set(ws.id, stream);
-  }
-
   private append(ws: Workspace, text: string): void {
     for (const line of text.split("\n")) ws.output.push(line);
     if (ws.output.length > MAX_OUTPUT_LINES) {
       ws.output.splice(0, ws.output.length - MAX_OUTPUT_LINES);
     }
-    // Append to the persistent log file. Open the stream lazily on first write.
-    if (!this.logStreams.has(ws.id)) this.ensureLogStream(ws);
-    const stream = this.logStreams.get(ws.id);
-    if (stream) stream.write(text + "\n");
     this.touch();
-  }
-
-  private closeLogStream(id: string): void {
-    const stream = this.logStreams.get(id);
-    if (stream) {
-      stream.end();
-      this.logStreams.delete(id);
-    }
   }
 
   async createWorkspace(opts: CreateOptions): Promise<Workspace> {
@@ -241,9 +209,6 @@ export class WorkspaceManager extends EventEmitter {
       path: wtPath,
       status: "creating",
       output: [],
-      maxRuntimeMs: this.config.maxRuntime
-        ? this.config.maxRuntime * 60 * 1000
-        : undefined,
       createdAt: Date.now(),
     };
     this.workspaces.set(id, ws);
@@ -633,42 +598,9 @@ export class WorkspaceManager extends EventEmitter {
     return true;
   }
 
-  stop(id: string, graceful = true): void {
+  stop(id: string): void {
     const child = this.procs.get(id);
-    if (!child || child.killed) return;
-    // Send SIGINT first — a polite request to shut down. Most interactive
-    // agents (Claude, opencode) will save state and exit promptly.
-    if (graceful) {
-      child.kill("SIGINT");
-      // If the process doesn't exit within the grace period, escalate to
-      // SIGTERM. Unref the timer so it doesn't keep the process alive.
-      const timer = setTimeout(() => {
-        if (!child.killed) child.kill("SIGTERM");
-      }, GRACEFUL_SHUTDOWN_MS);
-      timer.unref();
-    } else {
-      child.kill("SIGTERM");
-    }
-  }
-
-  /**
-   * Check every running workspace against its maxRuntimeMs and gracefully stop
-   * any that have exceeded it. Returns the titles of stopped workspaces so the
-   * UI can surface a notification for each. Designed to be called from the
-   * App's periodic runtime clock (e.g. every 1s) while any workspace is active.
-   */
-  checkTimeouts(): string[] {
-    const now = Date.now();
-    const stopped: string[] = [];
-    for (const [id, ws] of this.workspaces) {
-      if (ws.status !== "running") continue;
-      if (!ws.maxRuntimeMs || !ws.runStartedAt) continue;
-      if (now - ws.runStartedAt >= ws.maxRuntimeMs) {
-        this.stop(id);
-        stopped.push(ws.title);
-      }
-    }
-    return stopped;
+    if (child) child.kill("SIGTERM");
   }
 
   /**
@@ -794,7 +726,6 @@ export class WorkspaceManager extends EventEmitter {
     const ws = this.workspaces.get(id);
     if (!ws) return;
     this.stop(id);
-    this.closeLogStream(id);
     try {
       if (ws.path) await this.git.removeWorktree(ws.path);
     } catch {
@@ -810,29 +741,14 @@ export class WorkspaceManager extends EventEmitter {
     this.touch();
   }
 
-  /** Gracefully stop every running agent and flush state (used on quit). First
-   * sends SIGINT to give each process a chance to save state and exit cleanly;
-   * the grace-period timer (set in {@link stop}) will escalate to SIGTERM if
-   * any process doesn't comply. State is saved synchronously before we return,
-   * so it's consistent even if the process exits asynchronously after we do. */
+  /** Kill every running agent and flush state synchronously (used on quit). */
   shutdown(): void {
-    for (const child of this.procs.values()) {
-      if (!child.killed) child.kill("SIGINT");
-    }
+    for (const child of this.procs.values()) child.kill("SIGTERM");
     this.cancelSave();
-    // Close all log streams.
-    for (const [id, stream] of this.logStreams) {
-      stream.end();
-    }
-    this.logStreams.clear();
     try {
       saveStateSync(this.workspacesRoot, this.baseBranch, this.snapshot());
     } catch (err) {
       console.error("conduct: failed to save state on exit:", err);
-    }
-    // Escalate remaining processes to SIGTERM so they don't outlive us.
-    for (const child of this.procs.values()) {
-      if (!child.killed) child.kill("SIGTERM");
     }
   }
 

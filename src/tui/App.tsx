@@ -20,11 +20,10 @@ import {
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
 import { AutoImproveForm } from "./components/AutoImproveForm.js";
-import { SummaryDashboard } from "./components/SummaryDashboard.js";
 import type { AutoImproveFocus } from "../core/prompt.js";
 import { useConductKeys } from "./useConductKeys.js";
 
-type Mode = "list" | "detail" | "new" | "auto-improve" | "summary";
+type Mode = "list" | "detail" | "new" | "auto-improve";
 type View = "output" | "diff";
 
 // One-line note shown (and bell rung) when a workspace newly needs attention.
@@ -163,7 +162,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // Drive the runtime clock only while something is actually running, so an
   // idle session doesn't re-render every second for nothing. Snap `now` to the
   // current time as soon as a run begins so the first badge isn't a tick stale.
-  // Also checks for timed-out workspaces on each tick.
   const anyRunning = useMemo(
     () => items.some((w) => w.runStartedAt),
     [items],
@@ -171,15 +169,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   useEffect(() => {
     if (!anyRunning) return;
     setNow(Date.now());
-    const id = setInterval(() => {
-      setNow(Date.now());
-      const timedOut = manager.checkTimeouts();
-      for (const title of timedOut) {
-        flash(`⏰ ${title}: reached max runtime, stopped`);
-      }
-    }, 1000);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [anyRunning, manager, flash]);
+  }, [anyRunning]);
 
   // Track terminal resizes.
   useEffect(() => {
@@ -627,17 +619,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
 
   if (showHelp) {
     return <HelpOverlay height={size.rows} />;
-  }
-
-  if (mode === "summary") {
-    return (
-      <SummaryDashboard
-        items={ordered}
-        now={now}
-        height={size.rows}
-        width={size.cols}
-      />
-    );
   }
 
   const config = manager.config;

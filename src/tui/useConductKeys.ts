@@ -18,8 +18,8 @@ export interface HandlerState {
   agents: Array<{ id: string; displayName: string }>;
   onShell: (ws: Workspace) => string | void;
 
-  mode: "list" | "detail" | "new" | "auto-improve" | "summary";
-  setMode: (m: "list" | "detail" | "new" | "auto-improve" | "summary") => void;
+  mode: "list" | "detail" | "new" | "auto-improve";
+  setMode: (m: "list" | "detail" | "new" | "auto-improve") => void;
   view: "output" | "diff";
   setView: (v: "output" | "diff") => void;
   scroll: number;
@@ -139,29 +139,6 @@ export function useConductKeys(s: HandlerState): void {
         return;
       }
 
-      // Global keys: available from any mode except forms/help.
-      if (input === "q" || (key.ctrl && input === "c")) {
-        s.manager.shutdown();
-        exit();
-        return;
-      }
-      if (input === "?") {
-        s.setShowHelp(true);
-        return;
-      }
-      if (key.ctrl && input === "o") {
-        if (s.mode === "summary") s.setMode("list");
-        else s.setMode("summary");
-        return;
-      }
-      if (s.mode === "summary") {
-        if (key.escape) {
-          s.setMode("list");
-          return;
-        }
-        return;
-      }
-
       if (s.mode === "list" || s.mode === "detail") {
         if (s.current?.pendingPermission) {
           if (input === "y" || input === "n") {
@@ -192,6 +169,11 @@ export function useConductKeys(s: HandlerState): void {
         }
         if (key.escape && s.hasMarks) {
           s.clearMarks();
+          return;
+        }
+        if (input === "q" || (key.ctrl && input === "c")) {
+          s.manager.shutdown();
+          exit();
           return;
         }
         if (input === "n") {
@@ -271,6 +253,10 @@ export function useConductKeys(s: HandlerState): void {
         }
         if (input === "A") {
           s.setMode("auto-improve");
+          return;
+        }
+        if (input === "?") {
+          s.setShowHelp(true);
           return;
         }
       }
