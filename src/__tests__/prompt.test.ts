@@ -36,9 +36,14 @@ function exec(cmd: string, args: string[], cwd: string): Promise<void> {
 }
 
 describe("buildAutoImprovePrompt", () => {
-  it("includes the repo path in the prompt", async () => {
+  it("does not pin the agent to the base checkout's absolute path", async () => {
+    // The agent runs in its own worktree (cwd set at spawn). Embedding the main
+    // checkout's path would make it `cd` out of the worktree and commit onto the
+    // base branch, defeating conduct's isolation. The prompt must instead point
+    // the agent at its current working directory.
     const prompt = await buildAutoImprovePrompt(tmpDir, git);
-    expect(prompt).toContain(tmpDir);
+    expect(prompt).not.toContain(tmpDir);
+    expect(prompt).toContain("current working directory");
   });
 
   it("includes top-level directory listing", async () => {

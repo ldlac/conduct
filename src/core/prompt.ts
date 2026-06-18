@@ -37,7 +37,13 @@ export async function buildAutoImprovePrompt(repoRoot: string, git: Git): Promis
   } catch { /* best-effort */ }
 
   return [
-    `Analyze and improve this codebase at "${repoRoot}".`,
+    // Deliberately do NOT pin the agent to an absolute path. The agent process
+    // is spawned with its cwd set to the workspace's own git worktree; naming
+    // the main checkout's path here would make the agent `cd` out of its
+    // worktree and edit/commit directly on the base branch — exactly the
+    // isolation conduct exists to provide. Refer to the working directory so it
+    // operates wherever it was launched (its worktree).
+    `Analyze and improve this codebase (your current working directory).`,
     "",
     ...ctx,
     "",
