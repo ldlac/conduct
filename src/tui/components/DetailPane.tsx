@@ -21,6 +21,10 @@ interface Props {
   now: number;
   /** Whether the reply box is open (feeds the running agent's stdin). */
   composing: boolean;
+  /** When > 0, the open reply box is composing a broadcast to this many marked
+   * workspaces rather than a reply to the selected one; the box relabels itself
+   * so it's clear the message goes to the whole fleet. */
+  broadcastCount?: number;
   reply: string;
   onReplyChange: (v: string) => void;
   onReplySubmit: () => void;
@@ -123,6 +127,7 @@ export function DetailPane({
   height,
   now,
   composing,
+  broadcastCount,
   reply,
   onReplyChange,
   onReplySubmit,
@@ -260,12 +265,18 @@ export function DetailPane({
       </Box>
       {composing && (
         <Box>
-          <Text color="green">❯ </Text>
+          <Text color={broadcastCount ? "magenta" : "green"}>
+            {broadcastCount ? "📣 " : "❯ "}
+          </Text>
           <TextInput
             value={reply}
             onChange={onReplyChange}
             onSubmit={onReplySubmit}
-            placeholder="reply to the agent (Enter send · Esc cancel)"
+            placeholder={
+              broadcastCount
+                ? `broadcast to ${broadcastCount} marked agent${broadcastCount === 1 ? "" : "s"} (Enter send · Esc cancel)`
+                : "reply to the agent (Enter send · Esc cancel)"
+            }
           />
         </Box>
       )}

@@ -27,6 +27,8 @@ export interface HandlerState {
   setFollowTail: (f: boolean) => void;
   composing: boolean;
   setComposing: (c: boolean) => void;
+  broadcasting: boolean;
+  setBroadcasting: (b: boolean) => void;
   reply: string;
   setReply: (r: string) => void;
   searching: boolean;
@@ -48,6 +50,7 @@ export interface HandlerState {
   sortMode: SortMode;
   setSortMode: (m: SortMode) => void;
   hasMarks: boolean;
+  markedIds: string[];
   clearMarks: () => void;
   toggleMark: (id: string) => void;
 
@@ -66,6 +69,7 @@ export interface HandlerState {
   doMergeMany: () => void;
   doArchiveMany: () => void;
   doRestartMany: () => void;
+  doBroadcast: (text: string) => void;
   sendReply: (ws: Workspace | undefined, text: string) => void;
   loadDiff: (ws: Workspace | undefined) => void;
   flash: (msg: string) => void;
@@ -292,6 +296,23 @@ function handleListMode(
     s.loadDiff(s.current);
   } else if (input === "/") {
     s.setFiltering(true);
+  } else if (input === "i") {
+    // Broadcast a follow-up to the whole marked set at once. Only meaningful
+    // with marks (single-workspace replies happen with `i` in detail view), and
+    // only worth opening the box if at least one marked agent can take input.
+    if (!s.hasMarks) {
+      s.flash("mark workspaces with Space, then i to broadcast a message");
+      return;
+    }
+    const ready = s.markedIds.filter((id) => s.manager.acceptsInput(id)).length;
+    if (ready === 0) {
+      s.flash("no marked agents are running / interactive");
+      return;
+    }
+    s.setView("output");
+    s.setReply("");
+    s.setBroadcasting(true);
+    s.setComposing(true);
   } else if (key.tab) {
     const cycle: SortMode[] = ["group", "alpha", "newest", "oldest"];
     const idx = cycle.indexOf(s.sortMode);

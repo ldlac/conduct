@@ -164,6 +164,32 @@ describe("WorkspaceManager integration", () => {
     expect(afterReply!.output.some((l) => l.includes("I'm good, thanks!"))).toBe(true);
   }, 15000);
 
+  it("broadcasts input to several marked workspaces, skipping ineligible ones", async () => {
+    const targets = await manager.createWorkspaces({
+      title: "Broadcast test",
+      prompt: "Standing by",
+      agentId: "mock",
+      count: 2,
+    });
+
+    for (const ws of targets) {
+      await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    }
+
+    // Include a bogus id that can't take input — it must be counted as skipped,
+    // not sent, so the caller can broadcast to a marked set without pre-filtering.
+    const ids = [...targets.map((w) => w.id), "does-not-exist"];
+    const { sent, skipped } = manager.broadcastInput(ids, "carry on, please");
+    expect(sent).toBe(2);
+    expect(skipped).toBe(1);
+
+    for (const ws of targets) {
+      await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+      const after = manager.get(ws.id);
+      expect(after!.output.some((l) => l.includes("carry on, please"))).toBe(true);
+    }
+  }, 30000);
+
   it("restarts a completed workspace", async () => {
     const ws = await manager.createWorkspace({
       title: "Restart test",

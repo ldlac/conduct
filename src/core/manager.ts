@@ -451,6 +451,26 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   /**
+   * Send the same reply to every workspace in `ids` that can currently take it —
+   * the fleet-level counterpart to {@link sendInput}. This is the payoff of
+   * running agents in parallel: steer several of them at once with a single
+   * follow-up (e.g. "also add tests") instead of replying to each by hand.
+   * Workspaces that aren't running an interactive agent are silently skipped
+   * (they can't receive input), so the caller can broadcast to a marked set
+   * without first filtering it. Returns how many received the message and how
+   * many were skipped, for a user-facing summary.
+   */
+  broadcastInput(ids: string[], text: string): { sent: number; skipped: number } {
+    let sent = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      if (this.sendInput(id, text)) sent++;
+      else skipped++;
+    }
+    return { sent, skipped };
+  }
+
+  /**
    * Answer a pending tool-permission request (see
    * {@link Workspace.pendingPermission}): write the user's allow/deny decision
    * to the agent's stdin so it can run — or skip — the tool and continue the

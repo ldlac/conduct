@@ -73,7 +73,7 @@ export function StatusBar({
         <Text color="yellow">{message}</Text>
       ) : markedCount ? (
         <Text color="yellow">
-          {markedCount} marked · Space to toggle · Esc to clear · m/x/R on marked
+          {markedCount} marked · Space toggle · Esc clear · m/x/R · i broadcast
         </Text>
       ) : (
         <Text dimColor>

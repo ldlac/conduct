@@ -64,6 +64,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
   const [reply, setReply] = useState("");
+  // When true, the open reply box composes a *broadcast*: the typed message is
+  // sent to every marked workspace at once (see doBroadcast) instead of just the
+  // selected one. Reuses the same compose box and `reply` buffer as a single
+  // reply; this flag only changes where the message goes on submit.
+  const [broadcasting, setBroadcasting] = useState(false);
   // Search within the current detail view (output or diff). Typing `/` in detail
   // mode opens a search box; Enter commits, Esc clears. `n`/`N` cycle matches.
   const [searching, setSearching] = useState(false);
@@ -283,6 +288,26 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
+  const doBroadcast = useCallback(
+    (text: string) => {
+      // Close the compose box first so a slow flash never leaves it open.
+      setComposing(false);
+      setBroadcasting(false);
+      setReply("");
+      const trimmed = text.trim();
+      if (!trimmed || markedIds.length === 0) return;
+      const { sent, skipped } = manager.broadcastInput(markedIds, trimmed);
+      clearMarks();
+      const plural = sent === 1 ? "" : "s";
+      flash(
+        skipped > 0
+          ? `broadcast to ${sent} agent${plural} · ${skipped} skipped (not interactive)`
+          : `broadcast to ${sent} agent${plural}`,
+      );
+    },
+    [manager, markedIds, clearMarks, flash],
+  );
+
   const doClone = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -409,6 +434,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     scroll, setScroll,
     followTail, setFollowTail,
     composing, setComposing,
+    broadcasting, setBroadcasting,
     reply, setReply,
     searching, setSearching,
     searchQuery, setSearchQuery,
@@ -419,11 +445,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     renameText, setRenameText,
     showHelp, setShowHelp,
     sortMode, setSortMode,
-    hasMarks, clearMarks, toggleMark,
+    hasMarks, markedIds, clearMarks, toggleMark,
     current, ordered, selectedIndex,
     searchResults, maxScroll, topNow,
     doMerge, doRestart, doArchive, doClone, doAutoImprove,
-    doMergeMany, doArchiveMany, doRestartMany,
+    doMergeMany, doArchiveMany, doRestartMany, doBroadcast,
     sendReply, loadDiff,
     flash, setMessage, setSelectedId,
   });
@@ -492,11 +518,15 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           height={bodyHeight}
           now={now}
           composing={composing}
+          broadcastCount={broadcasting ? markedIds.length : 0}
           reply={reply}
           onReplyChange={setReply}
-          onReplySubmit={() => sendReply(current, reply)}
+          onReplySubmit={() =>
+            broadcasting ? doBroadcast(reply) : sendReply(current, reply)
+          }
           onReplyCancel={() => {
             setComposing(false);
+            setBroadcasting(false);
             setReply("");
           }}
           searchQuery={searchQuery}
