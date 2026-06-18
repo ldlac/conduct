@@ -63,8 +63,12 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   const [diff, setDiff] = useState("");
   const [diffFiles, setDiffFiles] = useState<DiffFileInfo[]>([]);
   const [diffFileIndex, setDiffFileIndex] = useState(0);
-  const currentDiff =
-    diffFiles.length > 0 ? diffFiles[diffFileIndex].content : diff;
+  // Ink's reconciler doesn't batch state updates across an async boundary the
+  // way react-dom does, so loadDiff's setDiffFiles / setDiffFileIndex(0) land in
+  // separate renders. Between them diffFiles can be the new (shorter) list while
+  // diffFileIndex is still a stale index from the previous workspace, so index
+  // defensively and fall back to the full diff.
+  const currentDiff = diffFiles[diffFileIndex]?.content ?? diff;
   const [scroll, setScroll] = useState(0);
   // Output streams live, so by default the pane follows the tail. Scrolling up
   // pins the view; scrolling back to the bottom re-enables following.
