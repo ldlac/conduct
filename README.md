@@ -137,8 +137,10 @@ pnpm start ../my-repo   # or point at another repo
 | ------------------ | --------------------------------- |
 | `o` / `↵`          | output view (tails live)          |
 | `d`                | diff view                         |
-| `c`                | shell in the worktree             |
+| `/`                | search the output or diff text    |
+| `n` / `N` (`p`)    | next / previous search match      |
 | `i`                | reply to the agent (answer a Q)   |
+| `c`                | shell in the worktree             |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
 | `y` / `n`          | allow / deny a permission request |
