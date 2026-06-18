@@ -320,4 +320,42 @@ describe("WorkspaceManager integration", () => {
       expect(ws.output).toBeInstanceOf(Array);
     }
   });
+
+  it("isRunning returns false for unknown id", () => {
+    expect(manager.isRunning("does-not-exist")).toBe(false);
+  });
+
+  it("acceptsInput returns false for unknown id", () => {
+    expect(manager.acceptsInput("does-not-exist")).toBe(false);
+  });
+
+  it("sendInput returns false for unknown id", () => {
+    expect(manager.sendInput("does-not-exist", "hello")).toBe(false);
+  });
+
+  it("get returns undefined for unknown id", () => {
+    expect(manager.get("does-not-exist")).toBeUndefined();
+  });
+
+  it("renameWorkspace returns false for blank title", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Rename blank test",
+      prompt: "test",
+      agentId: "mock",
+    });
+    expect(manager.renameWorkspace(ws.id, "")).toBe(false);
+    expect(manager.renameWorkspace(ws.id, "   ")).toBe(false);
+  }, 15000);
+
+  it("shutdown kills processes and does not throw", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Shutdown test",
+      prompt: "Running for shutdown",
+      agentId: "mock",
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(manager.isRunning(ws.id)).toBe(true);
+    expect(() => manager.shutdown()).not.toThrow();
+  }, 15000);
 });

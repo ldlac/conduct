@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAgent, listAgents, parseClaudeEvent } from "../core/agents.js";
+import { getAgent, listAgents, parseClaudeEvent, splitArgs } from "../core/agents.js";
 import type { AgentBackend, PermissionRequest } from "../core/types.js";
 
 describe("parseClaudeEvent", () => {
@@ -28,6 +28,36 @@ describe("parseClaudeEvent", () => {
   it("trims whitespace before parsing", () => {
     const evt = parseClaudeEvent('  {"type":"result"}  ');
     expect(evt?.type).toBe("result");
+  });
+});
+
+describe("splitArgs", () => {
+  it("splits simple space-separated args", () => {
+    expect(splitArgs("--verbose --debug")).toEqual(["--verbose", "--debug"]);
+  });
+
+  it("handles double-quoted strings as single arguments", () => {
+    expect(splitArgs('--model "claude opus 4"')).toEqual(["--model", "claude opus 4"]);
+  });
+
+  it("returns empty array for undefined", () => {
+    expect(splitArgs(undefined)).toEqual([]);
+  });
+
+  it("returns empty array for empty string", () => {
+    expect(splitArgs("")).toEqual([]);
+  });
+
+  it("ignores leading/trailing whitespace", () => {
+    expect(splitArgs("  --flag  ")).toEqual(["--flag"]);
+  });
+
+  it("handles mixed quoted and unquoted args", () => {
+    expect(splitArgs('-m "commit message" --no-verify')).toEqual(["-m", "commit message", "--no-verify"]);
+  });
+
+  it("handles multiple quoted groups", () => {
+    expect(splitArgs('--name "John Doe" --path "/some/path with spaces"')).toEqual(["--name", "John Doe", "--path", "/some/path with spaces"]);
   });
 });
 

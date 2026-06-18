@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawn } from "node:child_process";
 import { buildAutoImprovePrompt } from "../core/prompt.js";
 import { Git } from "../core/git.js";
 
@@ -26,7 +27,6 @@ afterAll(() => {
 
 function exec(cmd: string, args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const { spawn } = require("node:child_process");
     const child = spawn(cmd, args, { cwd, stdio: "pipe" });
     child.on("close", (code: number) =>
       code === 0 ? resolve() : reject(new Error(`exit ${code}`)),
