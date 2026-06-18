@@ -12,6 +12,12 @@ export interface ConductConfig {
    */
   defaultFanout?: number;
   /**
+   * Maximum runtime in minutes per workspace. When set, the agent will be
+   * gracefully stopped once its current turn exceeds this duration. Prevents
+   * runaway agents and unexpected API costs. Undefined means no limit.
+   */
+  maxRuntime?: number;
+  /**
    * Extra environment variables to inject into every agent process.
    */
   env?: Record<string, string>;
