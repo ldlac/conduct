@@ -95,6 +95,27 @@ export function wrapLine(line: string, width: number): string[] {
 export interface DiffFileInfo {
   path: string;
   content: string;
+  /** Lines added in this file's hunks (excludes the `+++` header line). */
+  insertions: number;
+  /** Lines removed in this file's hunks (excludes the `---` header line). */
+  deletions: number;
+}
+
+/**
+ * Count the added/removed lines within one file's section of a unified diff.
+ * Body lines start with a single `+`/`-`; the file headers (`+++ b/…`,
+ * `--- a/…`) start with three and are skipped, so they don't inflate the stat.
+ * Binary files carry no `+`/`-` body lines and so report `0 0` — the file still
+ * counts as changed, it just has no line delta to show.
+ */
+function countDiffLines(content: string): { insertions: number; deletions: number } {
+  let insertions = 0;
+  let deletions = 0;
+  for (const line of content.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) insertions += 1;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
+  }
+  return { insertions, deletions };
 }
 
 export function parseDiffFiles(diff: string): DiffFileInfo[] {
@@ -107,7 +128,8 @@ export function parseDiffFiles(diff: string): DiffFileInfo[] {
     const firstLine = content.split("\n")[0];
     const m = firstLine.match(/ b\/(.+)/);
     const path = m ? m[1] : firstLine;
-    files.push({ path, content });
+    const { insertions, deletions } = countDiffLines(content);
+    files.push({ path, content, insertions, deletions });
   }
   return files;
 }

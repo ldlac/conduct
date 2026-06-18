@@ -30,6 +30,8 @@ export interface HandlerState {
   setComposing: (c: boolean) => void;
   answering: boolean;
   setAnswering: (a: boolean) => void;
+  showFileList: boolean;
+  setShowFileList: (s: boolean) => void;
   broadcasting: boolean;
   setBroadcasting: (b: boolean) => void;
   reply: string;
@@ -99,11 +101,20 @@ export function useConductKeys(s: HandlerState): void {
   // question vanished) can't leave the main handler dead until the effect that
   // resets it runs.
   const pickerOpen = s.answering && !!s.current?.pendingQuestion;
+  // The changed-files overlay owns the keyboard while open (see DiffFileList),
+  // just like the question picker and reply box. Guard on the same conditions
+  // the App renders it under, so a stale flag can't deadlock the main handler.
+  const fileListOpen =
+    s.showFileList &&
+    s.mode === "detail" &&
+    s.view === "diff" &&
+    s.diffFiles.length > 0;
   const isActive =
     s.mode !== "new" &&
     s.mode !== "auto-improve" &&
     !s.composing &&
-    !pickerOpen;
+    !pickerOpen &&
+    !fileListOpen;
 
   useInput(
     (input, key) => {
@@ -458,6 +469,12 @@ function handleDetailMode(
   }
   if (input === "r" && s.view === "diff") {
     s.loadDiff(s.current);
+    return;
+  }
+  // `f` opens the changed-files overview over a non-empty diff: pick a file to
+  // jump straight to it instead of stepping through with [ / ].
+  if (input === "f" && s.view === "diff" && s.diffFiles.length > 0) {
+    s.setShowFileList(true);
     return;
   }
   if (s.view === "diff" && s.diffFiles.length > 1) {

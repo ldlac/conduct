@@ -61,6 +61,18 @@ stays active), and `esc` to clear it. The active filter is shown in the list
 header and the status bar; selection falls back to the first match while
 filtered and is restored when you clear it.
 
+## Browsing a diff
+
+Reviewing the result of a fan-out means reading several diffs fast. In the diff
+view, `[` and `]` step through the changed files one at a time, but with many
+files that's slow and blind. Press `f` to open a **changed-files overview**: a
+list of every file the workspace touched, each with its own `+x -y` line delta
+and the running total in the header. Move with `↑`/`↓` (or `j`/`k`), press `↵` to
+jump the diff straight to that file, and `Esc` (or `f` again) to close without
+moving. It opens on whichever file you're currently viewing, so you can see the
+shape of an attempt at a glance and dive into the file that matters instead of
+scrolling for it.
+
 ## Batch operations
 
 With several workspaces in flight, press `Space` to mark workspaces for batch
@@ -178,6 +190,8 @@ pnpm start ../my-repo   # or point at another repo
 | ------------------ | --------------------------------- |
 | `o` / `↵`          | output view (tails live)          |
 | `d`                | diff view                         |
+| `[` / `]`          | previous / next file in the diff  |
+| `f`                | changed-files overview (jump to a file in the diff) |
 | `/`                | search the output or diff text    |
 | `n` / `N` (`p`)    | next / previous search match      |
 | `i`                | reply to the agent; opens an option picker for a multiple-choice question |
@@ -351,5 +365,6 @@ remote, and the PR step needs `gh` on your `PATH`.
 
 ## Not yet (possible next steps)
 
-Multi-repo and a richer diff browser. The core is structured so these slot in
-around `WorkspaceManager`.
+Multi-repo orchestration. The diff browser now has a changed-files overview (see
+"Browsing a diff"); side-by-side comparison of two attempts' diffs would build on
+it. The core is structured so these slot in around `WorkspaceManager`.
