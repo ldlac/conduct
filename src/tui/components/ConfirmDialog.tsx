@@ -13,6 +13,7 @@ export function ConfirmDialog({ message }: Props) {
       flexDirection="column"
       alignItems="center"
       justifyContent="center"
+      backgroundColor="black"
     >
       <Box
         flexDirection="column"
