@@ -33,6 +33,7 @@ const LIST: Binding[] = [
 const ACTIONS: Binding[] = [
   { keys: "e", action: "rename the workspace title" },
   { keys: "C", action: "clone — re-run this prompt in a fresh worktree" },
+  { keys: "A", action: "auto-improve — analyze repo and improve it autonomously" },
   { keys: "c", action: "jump into a shell in the worktree" },
   { keys: "m", action: "merge (selected or all marked)" },
   { keys: "s", action: "stop the running agent" },
