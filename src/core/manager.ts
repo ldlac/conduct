@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs/promises";
 
-import { Git, type MergeResult } from "./git.js";
+import { Git, commandExists, run, type MergeResult } from "./git.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
 import type {
@@ -58,6 +58,44 @@ export interface CreateOptions {
   title: string;
   prompt: string;
   agentId: string;
+}
+
+/** Outcome of pushing a workspace's branch to a remote (see {@link WorkspaceManager.push}). */
+export interface PushResult {
+  /** True when the branch reached the remote. */
+  ok: boolean;
+  /** Remote the branch was pushed to (e.g. "origin"), set when `ok`. */
+  remote?: string;
+  /** The branch that was pushed, set when `ok`. */
+  branch?: string;
+  /** Human-readable failure reason, set when not `ok`. */
+  error?: string;
+}
+
+/**
+ * Outcome of opening a pull request for a workspace (see
+ * {@link WorkspaceManager.openPullRequest}). The push and the PR creation are
+ * distinct steps, so `pushed` is reported separately from `ok`: a branch can
+ * reach the remote (`pushed`) even when the `gh` step then fails or is
+ * unavailable, in which case the user can open the PR by hand.
+ */
+export interface PrResult {
+  /** True when a pull request was created (or already existed) and we have its URL. */
+  ok: boolean;
+  /** Whether the branch reached the remote, regardless of the PR step's outcome. */
+  pushed: boolean;
+  /** URL of the created (or pre-existing) pull request, set when `ok`. */
+  url?: string;
+  /** Human-readable failure reason, set when not `ok`. */
+  error?: string;
+}
+
+/** Timeout for the `gh pr create` invocation, which talks to GitHub over the network. */
+const GH_TIMEOUT_MS = 120_000;
+
+/** First http(s) URL found in `text`, or undefined. Used to pull a PR link out of `gh` output. */
+function firstUrl(text: string): string | undefined {
+  return text.match(/https?:\/\/\S+/)?.[0];
 }
 
 /**
@@ -182,7 +220,11 @@ export class WorkspaceManager extends EventEmitter {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      void this.flushSave();
+      // A debounced background save is best-effort: if it fails (e.g. the
+      // workspaces dir was removed out from under us), keep the last-known good
+      // state rather than letting the rejection escape as an unhandled
+      // rejection and crash the process. The next change reschedules a save.
+      this.flushSave().catch(() => {});
     }, SAVE_DEBOUNCE_MS);
   }
 
@@ -750,6 +792,80 @@ export class WorkspaceManager extends EventEmitter {
     ws.status = "merged";
     this.touch();
     return result;
+  }
+
+  /**
+   * Commit any pending work, then push the workspace's branch to `remote` — the
+   * way to get a finished attempt off the local machine without merging it into
+   * your base branch. Unlike {@link merge}, pushing is non-destructive to base
+   * and leaves any idle interactive session alive (so you can keep steering it),
+   * committing the worktree just as merge does so the pushed branch reflects the
+   * full diff. Refuses while the agent is mid-turn (the tree isn't settled).
+   * Returns a {@link PushResult}; a missing remote or a failed push is reported
+   * rather than thrown, so the UI can flash it.
+   */
+  async push(id: string, remote = "origin"): Promise<PushResult> {
+    const ws = this.workspaces.get(id);
+    if (!ws) throw new Error("No such workspace");
+    if (ws.status === "running")
+      throw new Error("Agent is still working — wait for it to finish or stop it");
+    if (!ws.path) return { ok: false, error: "workspace has no worktree to push" };
+    if (!(await this.git.hasRemote(remote))) {
+      return { ok: false, error: `no '${remote}' remote configured for this repo` };
+    }
+    try {
+      await this.git.commitAll(ws.path, `conduct: ${ws.title}`);
+      await this.git.push(ws.branch, { remote });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    ws.pushedRemote = remote;
+    this.touch();
+    return { ok: true, remote, branch: ws.branch };
+  }
+
+  /**
+   * Push the workspace's branch (via {@link push}) and then open a GitHub pull
+   * request against the base branch using the `gh` CLI — the remote counterpart
+   * to merging, for when an attempt should land through review rather than
+   * straight into base. The two steps are reported independently in the
+   * {@link PrResult}: if the push succeeds but `gh` is missing or errors, the
+   * branch is still on the remote (`pushed: true`) and the user can open the PR
+   * by hand. `gh pr create --fill` derives the title/body from the commits; an
+   * already-open PR is treated as success (its URL is captured from `gh`'s
+   * stderr). The PR URL is recorded on the workspace and persisted.
+   */
+  async openPullRequest(id: string, remote = "origin"): Promise<PrResult> {
+    const pushed = await this.push(id, remote);
+    if (!pushed.ok) return { ok: false, pushed: false, error: pushed.error };
+    if (!(await commandExists("gh"))) {
+      return {
+        ok: false,
+        pushed: true,
+        error: "pushed, but the GitHub CLI (gh) isn't installed — open the PR yourself",
+      };
+    }
+    const ws = this.workspaces.get(id);
+    if (!ws) return { ok: false, pushed: true, error: "workspace vanished" };
+    const res = await run(
+      "gh",
+      ["pr", "create", "--head", ws.branch, "--base", this.baseBranch, "--fill"],
+      this.git.root,
+      GH_TIMEOUT_MS,
+    );
+    // gh prints the new PR URL on stdout; when a PR already exists it exits
+    // non-zero but names the existing one on stderr. Either URL is a success.
+    const url = firstUrl(res.stdout) ?? firstUrl(res.stderr);
+    if (!url) {
+      return {
+        ok: false,
+        pushed: true,
+        error: res.stderr.trim() || res.stdout.trim() || "gh pr create failed",
+      };
+    }
+    ws.prUrl = url;
+    this.touch();
+    return { ok: true, pushed: true, url };
   }
 
   /** Stop the agent, tear down the worktree and branch, and forget the workspace. */

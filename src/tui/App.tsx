@@ -296,6 +296,32 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
+  const doPushPr = useCallback(
+    async (ws: Workspace | undefined) => {
+      if (!ws) return;
+      flash(`pushing ${ws.title}…`);
+      try {
+        const result = await manager.openPullRequest(ws.id);
+        if (result.ok && result.url) {
+          flash(`opened PR for ${ws.title}: ${result.url}`);
+        } else if (result.pushed) {
+          // Branch reached the remote even though the PR step didn't complete
+          // (no gh, gh error, or no GitHub remote) — say so, with the reason.
+          flash(
+            result.error
+              ? `pushed ${ws.title} to ${ws.pushedRemote ?? "origin"} — ${result.error}`
+              : `pushed ${ws.title}`,
+          );
+        } else {
+          flash(`push failed: ${result.error ?? "unknown error"}`);
+        }
+      } catch (err) {
+        flash(`push failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [manager, flash],
+  );
+
   const doRestart = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -609,7 +635,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
     switchWorkspace,
-    doMerge, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove,
+    doMerge, doPushPr, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove,
     doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,

@@ -20,6 +20,19 @@ async function exec(cmd: string, args: string[], cwd: string): Promise<void> {
   });
 }
 
+async function captureGit(args: string[], cwd: string): Promise<string> {
+  const { spawn } = await import("node:child_process");
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd, stdio: "pipe" });
+    let stdout = "";
+    child.stdout!.on("data", (d: Buffer) => (stdout += d.toString()));
+    child.on("close", (code: number) =>
+      code === 0 ? resolve(stdout) : reject(new Error(`git ${args.join(" ")} exited ${code}`)),
+    );
+    child.on("error", reject);
+  });
+}
+
 async function initRepo(dir: string): Promise<void> {
   fs.mkdirSync(dir, { recursive: true });
   await exec("git", ["init"], dir);
@@ -358,6 +371,109 @@ describe("WorkspaceManager integration", () => {
     expect(manager.isRunning(ws.id)).toBe(true);
     expect(() => manager.shutdown()).not.toThrow();
   }, 15000);
+});
+
+/**
+ * Exercises pushing a finished workspace's branch to a remote end to end,
+ * using a bare repo on disk as "origin" so no network is involved. PR creation
+ * needs the `gh` CLI plus a real GitHub remote, neither of which is available
+ * here, so we assert the part we control: the branch reaches the remote and the
+ * PR step reports `pushed: true` even when it can't finish.
+ */
+describe("WorkspaceManager — push & pull request", () => {
+  let pTmp: string;
+  let pRepo: string;
+  let pBare: string;
+  let pManager: WorkspaceManager;
+  let savedHome: string | undefined;
+
+  function waitDone(id: string, timeoutMs = 10000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pManager.off("update", onUpdate);
+        reject(new Error(`timeout waiting for ${id}`));
+      }, timeoutMs);
+      const onUpdate = () => {
+        const ws = pManager.get(id);
+        if (ws && (ws.status === "done" || ws.status === "error")) {
+          clearTimeout(timer);
+          pManager.off("update", onUpdate);
+          resolve();
+        }
+      };
+      pManager.on("update", onUpdate);
+      onUpdate();
+    });
+  }
+
+  beforeAll(async () => {
+    pTmp = fs.mkdtempSync(path.join(os.tmpdir(), "conduct-push-test-"));
+    pRepo = path.join(pTmp, "repo");
+    await initRepo(pRepo);
+    // A bare repo standing in for the GitHub remote.
+    pBare = path.join(pTmp, "origin.git");
+    await exec("git", ["init", "--bare", pBare], pTmp);
+    await exec("git", ["remote", "add", "origin", pBare], pRepo);
+
+    savedHome = process.env.HOME;
+    process.env.HOME = pTmp;
+    pManager = await WorkspaceManager.open(pRepo);
+  }, 30000);
+
+  afterAll(async () => {
+    if (pManager) pManager.shutdown();
+    await new Promise((r) => setTimeout(r, 200));
+    if (savedHome !== undefined) process.env.HOME = savedHome;
+    try { fs.rmSync(pTmp, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it("pushes a finished workspace's branch to origin", async () => {
+    const ws = await pManager.createWorkspace({
+      title: "Push me",
+      prompt: "Write something to push",
+      agentId: "mock",
+    });
+    await waitDone(ws.id);
+
+    const result = await pManager.push(ws.id);
+    expect(result.ok).toBe(true);
+    expect(result.remote).toBe("origin");
+    expect(result.branch).toBe(ws.branch);
+    expect(pManager.get(ws.id)!.pushedRemote).toBe("origin");
+
+    // The branch must now exist in the bare "remote".
+    const refs = await captureGit(["branch", "--list"], pBare);
+    expect(refs).toContain(ws.branch);
+  }, 20000);
+
+  it("reports a missing remote rather than throwing", async () => {
+    const ws = await pManager.createWorkspace({
+      title: "No remote here",
+      prompt: "Write something",
+      agentId: "mock",
+    });
+    await waitDone(ws.id);
+
+    const result = await pManager.push(ws.id, "nonexistent-remote");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("nonexistent-remote");
+  }, 20000);
+
+  it("openPullRequest pushes even when the PR step can't complete", async () => {
+    const ws = await pManager.createWorkspace({
+      title: "PR me",
+      prompt: "Write something for a PR",
+      agentId: "mock",
+    });
+    await waitDone(ws.id);
+
+    const pr = await pManager.openPullRequest(ws.id);
+    // The branch reached the remote regardless of whether gh + GitHub are set up.
+    expect(pr.pushed).toBe(true);
+    expect(pManager.get(ws.id)!.pushedRemote).toBe("origin");
+    const refs = await captureGit(["branch", "--list"], pBare);
+    expect(refs).toContain(ws.branch);
+  }, 20000);
 });
 
 /**

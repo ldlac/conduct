@@ -163,6 +163,7 @@ pnpm start ../my-repo   # or point at another repo
 | `C`                | clone — re-run this prompt in a fresh worktree |
 | `c`                | jump into a shell in the workspace's worktree  |
 | `m`                | merge (selected, or all marked when marks exist) |
+| `P`                | push the branch and open a pull request (`gh`) |
 | `s`                | stop the running agent                         |
 | `S`                | ask the agent to turn its work into a skill    |
 | `R`                | restart (selected, or all marked when marks exist) |
@@ -183,6 +184,7 @@ pnpm start ../my-repo   # or point at another repo
 | `c`                | shell in the worktree             |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
+| `P`                | push the branch and open a pull request (`gh`) |
 | `y` / `n`          | allow / deny a permission request |
 | `S`                | ask the agent to build a skill    |
 | `↑`/`↓`, PgUp/PgDn | scroll the diff                   |
@@ -293,6 +295,31 @@ branch. If the merge conflicts, conduct rolls it straight back (`git merge
 --abort`) so your base checkout is never left stranded mid-merge, flags the
 workspace with a red `⚠`, and lists the conflicting files in the detail pane.
 Resolve them by jumping into the worktree (`c`), then press `m` again to retry.
+
+## Pushing and pull requests
+
+Merging lands an attempt straight into your base branch. When you'd rather ship
+it through review — or just get a finished attempt off your machine — press `P`
+to push the selected workspace's branch and open a pull request. conduct:
+
+1. auto-commits any pending work (exactly as `m` does),
+2. pushes the branch to `origin` (`git push -u`), recording the push on the
+   workspace — the list shows a dim `⇡` and the detail header reads
+   `⇡ pushed → origin`,
+3. opens a pull request against the base branch with the [GitHub CLI](https://cli.github.com/)
+   (`gh pr create --fill`, which derives the title and body from the commits).
+   On success the workspace shows a magenta `⇡PR` and the detail header carries
+   the PR URL; the status bar flashes the link.
+
+The push and the PR are independent steps, so the result is honest about what
+happened: if the branch reaches the remote but `gh` isn't installed (or there's
+no GitHub remote), conduct tells you it pushed and leaves you to open the PR
+yourself, rather than pretending the whole thing failed. If a PR for the branch
+already exists, its URL is surfaced instead of erroring. Unlike `m`, pushing is
+non-destructive and leaves any idle agent session alive, so you can keep
+steering the workspace and push again later. `P` acts on the single selected
+workspace (a PR is inherently per-branch); it needs a configured `origin`
+remote, and the PR step needs `gh` on your `PATH`.
 
 ## Not yet (possible next steps)
 

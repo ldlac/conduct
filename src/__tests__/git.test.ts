@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
-import { Git, run } from "../core/git.js";
+import { Git, run, commandExists } from "../core/git.js";
 
 let tmpDir: string;
 let repoDir: string;
@@ -271,6 +271,57 @@ describe("Git instance methods", () => {
     await expect(
       git.merge("nonexistent-branch", "bad merge"),
     ).rejects.toThrow("git merge");
+  });
+});
+
+describe("commandExists", () => {
+  it("resolves true for a binary on PATH", async () => {
+    expect(await commandExists("git")).toBe(true);
+  });
+
+  it("resolves false for a bogus binary", async () => {
+    expect(await commandExists("definitely-not-a-real-binary-zzz-12345")).toBe(false);
+  });
+});
+
+describe("Git remote and push", () => {
+  // Use a bare repo on disk as the "remote", so push is exercised end to end
+  // with no network. Each test wires up and tears down its own origin so the
+  // shared `repoDir` stays remote-free for the other suites in this file.
+  it("hasRemote / remoteUrl reflect the configured origin", async () => {
+    expect(await git.hasRemote("origin")).toBe(false);
+    expect(await git.remoteUrl("origin")).toBeNull();
+
+    const bare = path.join(tmpDir, "remote-meta.git");
+    await exec("git", ["init", "--bare", bare], tmpDir);
+    await exec("git", ["remote", "add", "origin", bare], repoDir);
+
+    expect(await git.hasRemote("origin")).toBe(true);
+    expect(await git.remoteUrl("origin")).toBe(bare);
+
+    await exec("git", ["remote", "remove", "origin"], repoDir);
+  });
+
+  it("push sends a branch to the remote", async () => {
+    const bare = path.join(tmpDir, "remote-push.git");
+    await exec("git", ["init", "--bare", bare], tmpDir);
+    await exec("git", ["remote", "add", "origin", bare], repoDir);
+
+    const branch = "conduct/push-test";
+    await exec("git", ["branch", branch, await git.headSha()], repoDir);
+    await git.push(branch, { remote: "origin" });
+
+    const refs = await execAndCapture("git", ["branch", "--list"], bare);
+    expect(refs).toContain(branch);
+
+    await exec("git", ["remote", "remove", "origin"], repoDir);
+    await exec("git", ["branch", "-D", branch], repoDir);
+  }, 15000);
+
+  it("push throws when the remote is missing", async () => {
+    await expect(
+      git.push("conduct/no-remote", { remote: "definitely-no-such-remote" }),
+    ).rejects.toThrow();
   });
 });
 
