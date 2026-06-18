@@ -667,15 +667,24 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }
 
   return (
-    // Render one row short of the full terminal height. Ink only does its
-    // flicker-free incremental repaint (erase + rewrite just the changed lines)
-    // while the frame is *shorter* than the terminal; the instant the output
-    // height reaches stdout.rows it switches to writing ansiEscapes.clearTerminal
-    // — a full-screen wipe — on every frame, which is the visible flicker. A
-    // streaming agent repaints constantly, so a full-height root box flickers on
-    // every line. Leaving the last row free keeps us on the incremental path.
-    // (The earlier update-throttle only changed how often we repaint, not how.)
-    <Box position="relative" flexDirection="column" height={size.rows - 1}>
+    // Render one row short of the full terminal height, and HARD-CLIP to it.
+    // Ink only does its flicker-free incremental repaint while the rendered
+    // output is *shorter* than the terminal; the instant its height reaches
+    // stdout.rows it switches to writing ansiEscapes.clearTerminal — a
+    // full-screen wipe — on every frame, which is the worst flicker. Height
+    // alone isn't enough: with the default `overflow: visible`, optional lines
+    // (a merge-conflict/error notice, the reply box, a wrapped flash message)
+    // let DetailPane spill past its row box and push the real output height back
+    // up to stdout.rows, re-arming the wipe. `overflow="hidden"` clips the frame
+    // to exactly size.rows - 1 no matter what's inside, so we stay on the
+    // incremental path unconditionally. (index.tsx then removes the residual
+    // erase-then-redraw flash from that incremental path; see flickerFreeStdout.)
+    <Box
+      position="relative"
+      flexDirection="column"
+      height={size.rows - 1}
+      overflow="hidden"
+    >
       <Box flexDirection="row" height={bodyHeight}>
         <WorkspaceList
           items={ordered}

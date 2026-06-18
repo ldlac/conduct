@@ -6,6 +6,7 @@ import { WorkspaceManager } from "./core/manager.js";
 import { availableAgents } from "./core/agents.js";
 import type { Workspace } from "./core/types.js";
 import { App } from "./tui/App.js";
+import { flickerFreeStdout } from "./tui/flicker-free-stdout.js";
 
 // Shell env handed to a worktree shell, so the user (and their prompt) can tell
 // they're inside a conduct worktree and which workspace it belongs to.
@@ -99,6 +100,13 @@ async function main() {
   // pressing `c` calls onShell, which unmounts Ink so the terminal is fully
   // released, we run the shell to completion, then loop and re-render. A normal
   // quit leaves shellRequest unset and breaks the loop.
+  // Route Ink's frames through the in-place writer so streaming output repaints
+  // without the erase-then-redraw flash (see flickerFreeStdout). Only a real
+  // TTY gets wrapped; piped/redirected output keeps the plain stream.
+  const stdout = process.stdout.isTTY
+    ? flickerFreeStdout(process.stdout)
+    : process.stdout;
+
   let selectedId: string | undefined;
   for (;;) {
     let shellRequest: Workspace | undefined;
@@ -119,6 +127,7 @@ async function main() {
           return undefined;
         }}
       />,
+      { stdout },
     );
     await instance.waitUntilExit();
     if (!shellRequest) break;
