@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -13,6 +13,13 @@ beforeAll(() => {
 afterAll(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+function writeConfig(value: unknown): void {
+  fs.writeFileSync(
+    path.join(tmpDir, "conduct.json"),
+    typeof value === "string" ? value : JSON.stringify(value),
+  );
+}
 
 describe("loadConfig", () => {
   it("returns empty config when no conduct.json exists", async () => {
@@ -44,8 +51,52 @@ describe("loadConfig", () => {
   });
 
   it("returns empty config for malformed JSON", async () => {
-    fs.writeFileSync(path.join(tmpDir, "conduct.json"), "not json");
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeConfig("not json");
     const cfg = await loadConfig(tmpDir);
     expect(cfg).toEqual({});
+    // A file that exists but doesn't parse is a real misconfiguration; warn.
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("ignores a top-level JSON value that isn't an object", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeConfig(42);
+    expect(await loadConfig(tmpDir)).toEqual({});
+    writeConfig(["a", "b"]);
+    expect(await loadConfig(tmpDir)).toEqual({});
+    warn.mockRestore();
+  });
+
+  it("drops fields with the wrong type but keeps the valid ones", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeConfig({
+      defaultAgent: 123, // invalid
+      defaultFanout: 4, // valid
+      env: { OK: "yes", BAD: 5 }, // BAD dropped
+      agents: { claude: { args: "--verbose" }, codex: "nope" }, // codex dropped
+    });
+    const cfg = await loadConfig(tmpDir);
+    expect(cfg.defaultAgent).toBeUndefined();
+    expect(cfg.defaultFanout).toBe(4);
+    expect(cfg.env).toEqual({ OK: "yes" });
+    expect(cfg.agents).toEqual({ claude: { args: "--verbose" } });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("rejects a non-positive or non-numeric defaultFanout", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeConfig({ defaultFanout: 0 });
+    expect((await loadConfig(tmpDir)).defaultFanout).toBeUndefined();
+    writeConfig({ defaultFanout: "3" });
+    expect((await loadConfig(tmpDir)).defaultFanout).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it("floors a fractional defaultFanout to an integer", async () => {
+    writeConfig({ defaultFanout: 3.9 });
+    expect((await loadConfig(tmpDir)).defaultFanout).toBe(3);
   });
 });

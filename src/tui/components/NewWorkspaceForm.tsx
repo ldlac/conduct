@@ -9,9 +9,26 @@ export interface AgentInfo {
   displayName: string;
 }
 
+/**
+ * Index of the agent to highlight first in the picker. Honors a configured
+ * {@link ConductConfig.defaultAgent} when it names an available agent, and
+ * falls back to the first agent (index 0) otherwise — so a default that isn't
+ * installed, or no default at all, simply starts the cursor at the top.
+ */
+export function initialAgentIndex(
+  agents: AgentInfo[],
+  defaultAgentId?: string,
+): number {
+  if (!defaultAgentId) return 0;
+  const i = agents.findIndex((a) => a.id === defaultAgentId);
+  return i >= 0 ? i : 0;
+}
+
 interface Props {
   agents: AgentInfo[];
   defaultCount?: number;
+  /** Agent id to pre-select in the picker (from conduct.json's defaultAgent). */
+  defaultAgentId?: string;
   onSubmit: (v: {
     title: string;
     prompt: string;
@@ -35,7 +52,7 @@ function parseCount(text: string): number {
   return Math.min(MAX_FANOUT, n);
 }
 
-export function NewWorkspaceForm({ agents, defaultCount, onSubmit, onCancel }: Props) {
+export function NewWorkspaceForm({ agents, defaultCount, defaultAgentId, onSubmit, onCancel }: Props) {
   const [step, setStep] = useState<Step>("agent");
   const [agentId, setAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -60,6 +77,7 @@ export function NewWorkspaceForm({ agents, defaultCount, onSubmit, onCancel }: P
           <Text dimColor>Pick an agent (↑/↓, Enter):</Text>
           <SelectInput
             items={agents.map((a) => ({ label: a.displayName, value: a.id }))}
+            initialIndex={initialAgentIndex(agents, defaultAgentId)}
             onSelect={(item) => {
               setAgentId(String(item.value));
               setStep("prompt");

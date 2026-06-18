@@ -96,6 +96,19 @@ async function main() {
     displayName: a.displayName,
   }));
 
+  // A configured defaultAgent that isn't installed would silently fall back to
+  // the first available agent in the picker. Surface it here (before the TUI
+  // mounts, so the warning isn't swallowed by the rendered frame) so the
+  // misconfiguration is visible rather than mysterious.
+  const wanted = manager.config.defaultAgent;
+  if (wanted && !agents.some((a) => a.id === wanted)) {
+    console.error(
+      `conduct: defaultAgent "${wanted}" isn't available${
+        agents.length ? ` (have: ${agents.map((a) => a.id).join(", ")})` : ""
+      } — the picker will start on the first agent.`,
+    );
+  }
+
   // Render the TUI, but allow it to hand control back to us to run a shell:
   // pressing `c` calls onShell, which unmounts Ink so the terminal is fully
   // released, we run the shell to completion, then loop and re-render. A normal

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import SelectInput from "ink-select-input";
-import type { AgentInfo } from "./NewWorkspaceForm.js";
+import { initialAgentIndex, type AgentInfo } from "./NewWorkspaceForm.js";
 import { MAX_FANOUT } from "../../core/manager.js";
 import {
   AUTO_IMPROVE_FOCUS_LABELS,
@@ -12,6 +12,8 @@ import {
 interface Props {
   agents: AgentInfo[];
   defaultCount?: number;
+  /** Agent id to pre-select in the picker (from conduct.json's defaultAgent). */
+  defaultAgentId?: string;
   onSubmit: (focus: AutoImproveFocus, agentId: string, count: number) => void;
   onCancel: () => void;
 }
@@ -22,7 +24,7 @@ function parseCount(text: string): number {
   return Math.min(MAX_FANOUT, n);
 }
 
-export function AutoImproveForm({ agents, defaultCount, onSubmit, onCancel }: Props) {
+export function AutoImproveForm({ agents, defaultCount, defaultAgentId, onSubmit, onCancel }: Props) {
   const [step, setStep] = useState<"focus" | "agent" | "count">("focus");
   const [focus, setFocus] = useState<AutoImproveFocus>("general");
   const [agentId, setAgentId] = useState("");
@@ -71,6 +73,7 @@ export function AutoImproveForm({ agents, defaultCount, onSubmit, onCancel }: Pr
           <Text dimColor>Pick an agent (↑/↓, Enter):</Text>
           <SelectInput
             items={agents.map((a) => ({ label: a.displayName, value: a.id }))}
+            initialIndex={initialAgentIndex(agents, defaultAgentId)}
             onSelect={(item) => {
               setAgentId(String(item.value));
               setStep("count");
