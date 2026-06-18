@@ -69,6 +69,29 @@ function summarizeToolUse(tool: string, input: unknown): string {
   return tool;
 }
 
+/**
+ * Split a string into CLI arguments, respecting double-quoted groups.
+ * "foo bar" becomes one argument "foo bar"; bare words are split on whitespace.
+ * Returns an empty array for falsy or whitespace-only input.
+ */
+export function splitArgs(s: string | undefined): string[] {
+  if (!s) return [];
+  const args: string[] = [];
+  let current = "";
+  let inQuote = false;
+  for (const ch of s.trim()) {
+    if (ch === '"') {
+      inQuote = !inQuote;
+    } else if (ch === " " && !inQuote) {
+      if (current) { args.push(current); current = ""; }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) args.push(current);
+  return args;
+}
+
 /** Cache of `which <bin>` lookups. */
 const availability = new Map<string, boolean>();
 
@@ -114,9 +137,7 @@ const claude: AgentBackend = {
   displayName: "Claude Code",
   isAvailable: () => onPath("claude"),
   buildCommand() {
-    const extra = (process.env.CONDUCT_CLAUDE_ARGS ?? "")
-      .split(" ")
-      .filter(Boolean);
+    const extra = splitArgs(process.env.CONDUCT_CLAUDE_ARGS);
     const permissionMode =
       process.env.CONDUCT_CLAUDE_PERMISSION_MODE?.trim() || "acceptEdits";
     return {
@@ -264,9 +285,7 @@ const claudeAllPerms: AgentBackend = {
   id: "claude-all",
   displayName: "Claude Code (all perms)",
   buildCommand() {
-    const extra = (process.env.CONDUCT_CLAUDE_ARGS ?? "")
-      .split(" ")
-      .filter(Boolean);
+    const extra = splitArgs(process.env.CONDUCT_CLAUDE_ARGS);
     return {
       cmd: "claude",
       args: [
@@ -289,9 +308,7 @@ const codex: AgentBackend = {
   displayName: "Codex CLI",
   isAvailable: () => onPath("codex"),
   buildCommand(prompt) {
-    const extra = (process.env.CONDUCT_CODEX_ARGS ?? "")
-      .split(" ")
-      .filter(Boolean);
+    const extra = splitArgs(process.env.CONDUCT_CODEX_ARGS);
     return { cmd: "codex", args: ["exec", ...extra, prompt] };
   },
 };
@@ -310,9 +327,7 @@ const opencode: AgentBackend = {
   displayName: "opencode",
   isAvailable: () => onPath("opencode"),
   buildCommand(prompt) {
-    const extra = (process.env.CONDUCT_OPENCODE_ARGS ?? "")
-      .split(" ")
-      .filter(Boolean);
+    const extra = splitArgs(process.env.CONDUCT_OPENCODE_ARGS);
     return { cmd: "opencode", args: ["run", ...extra, prompt] };
   },
 };
@@ -330,9 +345,7 @@ const opencodeAllPerms: AgentBackend = {
   id: "opencode-all",
   displayName: "opencode (all perms)",
   buildCommand(prompt) {
-    const extra = (process.env.CONDUCT_OPENCODE_ARGS ?? "")
-      .split(" ")
-      .filter(Boolean);
+    const extra = splitArgs(process.env.CONDUCT_OPENCODE_ARGS);
     return {
       cmd: "opencode",
       args: ["run", ...extra, prompt],
