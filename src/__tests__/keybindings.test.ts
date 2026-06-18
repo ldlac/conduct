@@ -60,6 +60,10 @@ describe("MODE_HINTS", () => {
     }
   });
 
+  it("auto-improve hint mentions count step", () => {
+    expect(MODE_HINTS["auto-improve"]).toContain("count");
+  });
+
   it("hints match the actual keybindings", () => {
     // Check that the list mode hint references keys that exist as keybindings
     const allKeys = new Set(KEYBINDINGS.map((kb) => kb.keys.split(" · ")).flat());
@@ -67,9 +71,10 @@ describe("MODE_HINTS", () => {
     for (const part of hint.split(" · ")) {
       const key = part.split(" ")[0];
       if (key === "Space") continue;
-      if (!allKeys.has(key) && key !== key.toLowerCase()) {
-        // Capital letters might be modified by Shift, check lowercase
-        expect(allKeys.has(key.toLowerCase()) || Array.from(allKeys).some((k) => k.includes(key))).toBe(true);
+      if (!allKeys.has(key)) {
+        // Check if it's a prefix match (e.g. Alt+a matches Alt+a)
+        const matched = Array.from(allKeys).some((k) => k === key || k.toLowerCase() === key.toLowerCase());
+        expect(matched || key === key.toLowerCase()).toBe(true);
       }
     }
   });

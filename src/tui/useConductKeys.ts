@@ -66,10 +66,13 @@ export interface HandlerState {
   doRestart: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
-  doAutoImprove: (agentId?: string, focus?: AutoImproveFocus) => void;
+  doAutoImprove: (agentId?: string, focus?: AutoImproveFocus, count?: number) => void;
   doMergeMany: () => void;
   doArchiveMany: () => void;
   doRestartMany: () => void;
+  doStopAllRunning: () => void;
+  doArchiveAllMerged: () => void;
+  doRestartAllStopped: () => void;
   doBroadcast: (text: string) => void;
   sendReply: (ws: Workspace | undefined, text: string) => void;
   loadDiff: (ws: Workspace | undefined) => void;
@@ -144,6 +147,18 @@ export function useConductKeys(s: HandlerState): void {
             s.manager.stop(s.current.id);
             s.flash(`stopping ${s.current.title}`);
           }
+          return;
+        }
+        if (key.meta && input === "a") {
+          s.doArchiveAllMerged();
+          return;
+        }
+        if (key.meta && input === "s") {
+          s.doStopAllRunning();
+          return;
+        }
+        if (key.meta && input === "r") {
+          s.doRestartAllStopped();
           return;
         }
         if (input === "x") {

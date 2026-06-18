@@ -326,7 +326,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
-  const doAutoImprove = useCallback(async (agentId?: string, focus?: AutoImproveFocus) => {
+  const doAutoImprove = useCallback(async (agentId?: string, focus?: AutoImproveFocus, count?: number) => {
     const id = agentId ?? agents[0]?.id;
     if (!id) {
       flash("no agents available");
@@ -340,11 +340,15 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         title: "Auto-improve",
         prompt,
         agentId: id,
-        count: 1,
+        count: count ?? 1,
       });
       if (created[0]) {
         setSelectedId(created[0].id);
-        flash(`auto-improve launched with ${agent?.displayName ?? id}`);
+        flash(
+          count && count > 1
+            ? `auto-improve launched ${count} × ${agent?.displayName ?? id}`
+            : `auto-improve launched with ${agent?.displayName ?? id}`,
+        );
       }
     } catch (err) {
       flash(
@@ -428,6 +432,55 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     flash(`restarted ${count} of ${targets.length} marked`);
   }, [manager, flash, ordered, markedIds, clearMarks]);
 
+  const doStopAllRunning = useCallback(() => {
+    const running = items.filter((w) => w.status === "running" || w.status === "creating");
+    let count = 0;
+    for (const ws of running) {
+      manager.stop(ws.id);
+      count++;
+    }
+    if (count > 0) {
+      flash(`stopping ${count} running workspace${count === 1 ? "" : "s"}`);
+    } else {
+      flash("no running workspaces");
+    }
+  }, [manager, items, flash]);
+
+  const doArchiveAllMerged = useCallback(async () => {
+    const merged = items.filter((w) => w.status === "merged");
+    if (merged.length === 0) {
+      flash("no merged workspaces to archive");
+      return;
+    }
+    let count = 0;
+    for (const ws of merged) {
+      await manager.archive(ws.id);
+      count++;
+    }
+    const remaining = manager.snapshot();
+    setSelectedId(remaining[0]?.id);
+    setMode("list");
+    flash(`archived ${count} merged workspace${count === 1 ? "" : "s"}`);
+  }, [manager, flash, items]);
+
+  const doRestartAllStopped = useCallback(async () => {
+    const stopped = items.filter((w) => w.status === "stopped" || w.status === "error");
+    if (stopped.length === 0) {
+      flash("no stopped or failed workspaces to restart");
+      return;
+    }
+    let count = 0;
+    for (const ws of stopped) {
+      try {
+        await manager.restart(ws.id);
+        count++;
+      } catch {
+        /* skip */
+      }
+    }
+    flash(`restarted ${count} of ${stopped.length} workspace${stopped.length === 1 ? "" : "s"}`);
+  }, [manager, items, flash]);
+
   useConductKeys({
     manager, agents, onShell,
     mode, setMode,
@@ -451,6 +504,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     doMerge, doRestart, doArchive, doClone, doAutoImprove,
     doMergeMany, doArchiveMany, doRestartMany, doBroadcast,
+    doStopAllRunning, doArchiveAllMerged, doRestartAllStopped,
     sendReply, loadDiff,
     flash, setMessage, setSelectedId,
   });
@@ -459,14 +513,17 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     return <HelpOverlay height={size.rows} />;
   }
 
+  const config = manager.config;
+
   if (mode === "auto-improve") {
     return (
       <AutoImproveForm
         agents={agents}
+        defaultCount={config.defaultFanout}
         onCancel={() => setMode("list")}
-        onSubmit={(focus, agentId) => {
+        onSubmit={(focus, agentId, count) => {
           setMode("list");
-          void doAutoImprove(agentId, focus);
+          void doAutoImprove(agentId, focus, count);
         }}
       />
     );
@@ -476,6 +533,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     return (
       <NewWorkspaceForm
         agents={agents}
+        defaultCount={config.defaultFanout}
         onCancel={() => setMode("list")}
         onSubmit={async ({ title, prompt, agentId, count }) => {
           setMode("list");
