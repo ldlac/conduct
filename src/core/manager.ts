@@ -20,6 +20,16 @@ const MAX_OUTPUT_LINES = 2000;
 /** Debounce window for background state saves during normal operation. */
 const SAVE_DEBOUNCE_MS = 500;
 /**
+ * Minimum gap between `update` emissions. A running agent prints many lines
+ * per second, and each line used to emit `update` synchronously, so the UI
+ * re-rendered (and Ink repainted the whole frame) on every line. That made the
+ * terminal flicker, kept resetting the cursor, and cleared any in-progress text
+ * selection so output couldn't be copy-pasted. Coalescing emissions to ~20fps
+ * keeps streaming smooth while staying well below the perception threshold for
+ * interactive changes.
+ */
+const UPDATE_THROTTLE_MS = 50;
+/**
  * Upper bound on a single fan-out (see {@link WorkspaceManager.createWorkspaces}).
  * Each workspace is a real worktree plus a live agent process, so spinning up an
  * unbounded number from one keystroke would thrash the disk and the machine;
@@ -59,6 +69,10 @@ export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, Workspace>();
   private procs = new Map<string, ChildProcess>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pending coalesced `update` emission; see {@link UPDATE_THROTTLE_MS}. */
+  private updateTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Timestamp of the last `update` emission, for the leading-edge throttle. */
+  private lastUpdateAt = 0;
   /** Serializes concurrent save calls so at most one write is in flight. */
   private savePromise: Promise<void> | null = null;
   readonly workspacesRoot: string;
@@ -142,8 +156,25 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   private touch(): void {
-    this.emit("update");
+    this.scheduleUpdate();
     this.scheduleSave();
+  }
+
+  /**
+   * Emit `update` at most once per {@link UPDATE_THROTTLE_MS}. The first touch
+   * after an idle period fires on the next tick (leading edge, so interactive
+   * changes feel instant); touches that arrive during the window are coalesced
+   * into a single trailing emission. Listeners read fresh state via
+   * {@link snapshot}, so a delayed emit is always up to date.
+   */
+  private scheduleUpdate(): void {
+    if (this.updateTimer) return;
+    const wait = Math.max(0, UPDATE_THROTTLE_MS - (Date.now() - this.lastUpdateAt));
+    this.updateTimer = setTimeout(() => {
+      this.updateTimer = null;
+      this.lastUpdateAt = Date.now();
+      this.emit("update");
+    }, wait);
   }
 
   /** Persist the workspace list at most once per debounce window. */
@@ -745,6 +776,10 @@ export class WorkspaceManager extends EventEmitter {
   shutdown(): void {
     for (const child of this.procs.values()) child.kill("SIGTERM");
     this.cancelSave();
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
     try {
       saveStateSync(this.workspacesRoot, this.baseBranch, this.snapshot());
     } catch (err) {
