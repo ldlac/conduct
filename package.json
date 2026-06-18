@@ -1,6 +1,6 @@
 {
   "name": "conduct",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A terminal orchestrator for running multiple coding agents in parallel git worktrees (a Conductor clone).",
   "type": "module",
   "bin": {
