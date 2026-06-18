@@ -11,7 +11,8 @@
     "dev": "tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build": "bun run scripts/build.ts"
   },
   "dependencies": {
     "ink": "^5.0.1",
