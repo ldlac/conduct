@@ -474,6 +474,24 @@ describe("opencode agent", () => {
       expect(cmd.args[cmd.args.length - 1]).toBe("refactor this");
     });
   });
+
+  describe("resumeCommand", () => {
+    it("is conversational by re-running, not by stdin", () => {
+      // It continues across turns, but via resumeCommand (re-run) rather than a
+      // persistent stdin session — so it must NOT define encodeInput, or the
+      // manager would try to write replies to a process that has already exited.
+      expect(opencode.encodeInput).toBeUndefined();
+      expect(typeof opencode.resumeCommand).toBe("function");
+    });
+
+    it("continues the most recent session with the reply as the message", () => {
+      const cmd = opencode.resumeCommand!("and now add tests");
+      expect(cmd.cmd).toBe("opencode");
+      expect(cmd.args[0]).toBe("run");
+      expect(cmd.args).toContain("--continue");
+      expect(cmd.args[cmd.args.length - 1]).toBe("and now add tests");
+    });
+  });
 });
 
 describe("opencode-all agent", () => {
@@ -483,6 +501,17 @@ describe("opencode-all agent", () => {
     it("injects OPENCODE_CONFIG_CONTENT env var", () => {
       const cmd = opencodeAll.buildCommand("test");
       expect(cmd.env).toBeDefined();
+      expect(cmd.env!.OPENCODE_CONFIG_CONTENT).toBe('{"permission":"allow"}');
+    });
+  });
+
+  describe("resumeCommand", () => {
+    it("re-runs with --continue and keeps the permission bypass on resume", () => {
+      const cmd = opencodeAll.resumeCommand!("keep going");
+      expect(cmd.args[0]).toBe("run");
+      expect(cmd.args).toContain("--continue");
+      expect(cmd.args[cmd.args.length - 1]).toBe("keep going");
+      // The bypass must hold on every turn, not just the first.
       expect(cmd.env!.OPENCODE_CONFIG_CONTENT).toBe('{"permission":"allow"}');
     });
   });

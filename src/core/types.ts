@@ -230,8 +230,30 @@ export interface AgentBackend {
    * is kept open and this turns a user's reply (and the initial prompt) into
    * the bytes to write to stdin. Returning the message lets the user answer
    * questions the agent asks and keep the conversation going.
+   *
+   * This is one of two ways an agent can be conversational; the other is
+   * {@link resumeCommand}, for CLIs that resume by re-running rather than by
+   * holding a session open. An agent defines at most one of the two.
    */
   encodeInput?(text: string): string;
+  /**
+   * If defined (and {@link encodeInput} is not), the agent is conversational by
+   * *re-running its CLI* rather than holding a persistent stdin session: build
+   * the invocation that continues the existing conversation with a new user
+   * message. The manager then runs the agent as a fresh one-shot process per
+   * turn — the first turn via {@link buildCommand}, each later reply via this —
+   * and relies on the CLI's own session continuation (opencode's
+   * `run --continue`, which resumes the most recent session in the worktree's
+   * directory) to carry context across turns. The process exiting is the turn
+   * boundary, so there is no live stdin and {@link turnEnded}/{@link awaitsReply}
+   * don't apply; the manager treats process exit as turn end and re-enables a
+   * reply once the workspace is idle.
+   */
+  resumeCommand?(text: string): {
+    cmd: string;
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  };
   /**
    * For interactive agents that multiplex an out-of-band control protocol over
    * the same stdout/stdin streams as their normal messages (Claude Code does
