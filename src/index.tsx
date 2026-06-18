@@ -1,5 +1,7 @@
 import React from "react";
 import path from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { render } from "ink";
 import { WorkspaceManager } from "./core/manager.js";
@@ -79,8 +81,24 @@ function runShell(ws: Workspace): Promise<void> {
   });
 }
 
+// Read the version straight from the package manifest so it stays in sync with
+// what's published — no codegen or constant to keep updated.
+function appVersion(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const pkg = JSON.parse(
+    readFileSync(path.join(here, "..", "package.json"), "utf8"),
+  ) as { version?: string };
+  return pkg.version ?? "unknown";
+}
+
 async function main() {
   const arg = process.argv[2];
+
+  if (arg === "-v" || arg === "--version") {
+    console.log(appVersion());
+    return;
+  }
+
   const cwd = arg ? path.resolve(arg) : process.cwd();
 
   let manager: WorkspaceManager;
