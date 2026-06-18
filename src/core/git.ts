@@ -24,6 +24,7 @@ export function run(
   cmd: string,
   args: string[],
   cwd?: string,
+  timeoutMs?: number,
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
@@ -34,16 +35,32 @@ export function run(
     let stderr = "";
     child.stdout?.on("data", (d) => (stdout += d.toString()));
     child.stderr?.on("data", (d) => (stderr += d.toString()));
-    child.on("error", (err) =>
-      resolve({ code: 127, stdout, stderr: stderr + String(err) }),
-    );
-    child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
+    const timer =
+      timeoutMs && timeoutMs > 0
+        ? setTimeout(() => {
+            child.kill("SIGTERM");
+            resolve({ code: 124, stdout, stderr: `${stderr}\n[timed out after ${timeoutMs}ms]`.trim() });
+          }, timeoutMs)
+        : undefined;
+    child.on("error", (err) => {
+      if (timer) clearTimeout(timer);
+      resolve({ code: 127, stdout, stderr: stderr + String(err) });
+    });
+    child.on("close", (code) => {
+      if (timer) clearTimeout(timer);
+      resolve({ code: code ?? 0, stdout, stderr });
+    });
   });
 }
 
+/** Default timeout for git operations (30s). Diff and merge can take longer. */
+const GIT_TIMEOUT = 30_000;
+/** Longer timeout for slow operations like merge. */
+const GIT_LONG_TIMEOUT = 120_000;
+
 /** Run git, throwing a useful error on failure. */
 async function git(args: string[], cwd: string): Promise<string> {
-  const res = await run("git", args, cwd);
+  const res = await run("git", args, cwd, GIT_TIMEOUT);
   if (res.code !== 0) {
     throw new Error(
       `git ${args.join(" ")} failed (${res.code}): ${res.stderr.trim() || res.stdout.trim()}`,
@@ -174,6 +191,7 @@ export class Git {
       "git",
       ["merge", "--no-ff", "-m", message, branch],
       this.root,
+      GIT_LONG_TIMEOUT,
     );
     if (res.code === 0) return { ok: true };
     // A non-zero exit is either a conflict or a refusal to even start the merge.

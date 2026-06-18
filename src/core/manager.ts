@@ -137,15 +137,17 @@ export class WorkspaceManager extends EventEmitter {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      void saveState(this.workspacesRoot, this.baseBranch, this.snapshot()).catch(
-        (err: unknown) => {
-          console.error(
-            "conduct: background save failed (will retry on next change):",
-            err instanceof Error ? err.message : String(err),
-          );
-        },
-      );
+      void this.flushSave();
     }, SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * Persist state immediately, canceling any pending debounced save. Used
+   * before critical operations where losing state would orphan workspaces.
+   */
+  async flushSave(): Promise<void> {
+    this.cancelSave();
+    await saveState(this.workspacesRoot, this.baseBranch, this.snapshot());
   }
 
   /**
@@ -513,48 +515,12 @@ export class WorkspaceManager extends EventEmitter {
 
   /**
    * Gather repo context and build a prompt that asks the agent to analyze and
-   * improve the codebase autonomously — no manual prompt typing needed. Reads
-   * the top-level directory listing, README, package.json (if they exist), and
-   * recent git history to ground the agent before it starts work.
+   * improve the codebase autonomously. Delegates to {@link buildAutoImprovePrompt}
+   * in `prompt.ts`.
    */
   async buildAutoImprovePrompt(): Promise<string> {
-    const ctx: string[] = [];
-
-    try {
-      const entries = await fs.readdir(this.git.root, { withFileTypes: true });
-      const listing = entries
-        .filter((e) => !e.name.startsWith(".") && !e.name.startsWith("node_modules"))
-        .map((e) => `${e.isDirectory() ? "dir" : "file"}  ${e.name}`)
-        .join("\n");
-      ctx.push(`Top-level contents:\n${listing}`);
-    } catch { /* best-effort */ }
-
-    try {
-      const readme = await fs.readFile(path.join(this.git.root, "README.md"), "utf-8");
-      ctx.push(`README.md:\n${readme.slice(0, 2000)}`);
-    } catch { /* no README */ }
-
-    try {
-      const pkgRaw = await fs.readFile(path.join(this.git.root, "package.json"), "utf-8");
-      const pkg = JSON.parse(pkgRaw);
-      ctx.push(`package.json:\n${JSON.stringify(pkg, null, 2).slice(0, 2000)}`);
-    } catch { /* no package.json */ }
-
-    try {
-      const log = await this.git.recentLog(10);
-      if (log.trim()) ctx.push(`Recent commits:\n${log}`);
-    } catch { /* best-effort */ }
-
-    return [
-      `Analyze and improve this codebase at "${this.git.root}".`,
-      "",
-      ...ctx,
-      "",
-      "First explore the codebase to understand its purpose and architecture.",
-      "Then make concrete improvements: code quality, architecture, performance,",
-      "testing, documentation, and features. Prioritize changes that provide the",
-      "most value for this project. Work iteratively, making improvements one at a time.",
-    ].join("\n");
+    const { buildAutoImprovePrompt: build } = await import("./prompt.js");
+    return build(this.git.root, this.git);
   }
 
   async getDiff(id: string): Promise<string> {
@@ -626,14 +592,18 @@ export class WorkspaceManager extends EventEmitter {
   /** Kill every running agent and flush state synchronously (used on quit). */
   shutdown(): void {
     for (const child of this.procs.values()) child.kill("SIGTERM");
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
+    this.cancelSave();
     try {
       saveStateSync(this.workspacesRoot, this.baseBranch, this.snapshot());
     } catch {
       /* nothing useful to do as the process is exiting */
+    }
+  }
+
+  private cancelSave(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
   }
 }
@@ -668,7 +638,7 @@ export function sumUsage(workspaces: Workspace[]): TokenUsage | undefined {
  * repeatedly re-rolling a prompt produces readable, distinct titles rather than
  * a pile of identical "(copy)" names.
  */
-function cloneTitle(title: string): string {
+export function cloneTitle(title: string): string {
   const m = title.match(/^(.*?) \(copy(?: (\d+))?\)$/);
   if (m) {
     const n = m[2] ? parseInt(m[2], 10) + 1 : 2;

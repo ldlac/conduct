@@ -6,7 +6,7 @@ import type { AgentBackend, PermissionRequest, TokenUsage } from "./types.js";
  * These are the fields we reach into across parseControl, awaitsReply,
  * turnEnded, parseUsage, and parseLine — anything beyond them is ignored.
  */
-interface ClaudeEvent {
+export interface ClaudeEvent {
   type?: string;
   subtype?: string;
   request_id?: string | number;
@@ -25,7 +25,7 @@ interface ClaudeEvent {
 }
 
 /** Parse a line as a Claude Code protocol event, or null if it isn't JSON. */
-function parseClaudeEvent(line: string): ClaudeEvent | null {
+export function parseClaudeEvent(line: string): ClaudeEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   try {
@@ -40,11 +40,16 @@ function parseClaudeEvent(line: string): ClaudeEvent | null {
  * the tail of the text, ignoring trailing whitespace and the closing
  * punctuation/markdown a question might end with (quotes, parens, emphasis), so
  * e.g. `Should I proceed?"` or `...continue?**` still count.
+ * Also handles the full-width question mark (`？`) used in CJK text.
  */
 function endsWithQuestion(text: unknown): boolean {
   if (typeof text !== "string") return false;
-  const tail = text.trimEnd().replace(/[)\]"'`*_>]+$/, "").trimEnd();
-  return tail.endsWith("?");
+  // Strip trailing punctuation/markdown characters that might wrap a question
+  // mark, then re-check. The `.` handles cases like `"Really?."` and `!`
+  // handles `"Stop!*"` (which is not a question, but we only check for `?`
+  // so it won't false-positive).
+  const tail = text.trimEnd().replace(/[)\]"'`*_>.!]+$/, "").trimEnd();
+  return tail.endsWith("?") || tail.endsWith("？");
 }
 
 /**

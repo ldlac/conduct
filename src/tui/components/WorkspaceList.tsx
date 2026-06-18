@@ -28,7 +28,7 @@ export function totalTokens(usage: TokenUsage): number {
 
 /** Compact a token count: 1530 → "1.5k", 2_300_000 → "2.3M". */
 export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 999_500) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
 }

@@ -32,12 +32,15 @@ src/
   core/                 no UI — pure orchestration, testable in isolation
     types.ts            Workspace, WorkspaceStatus, DiffStat, AgentBackend
     git.ts              Git class: worktree / diff / merge / commit helpers
-    agents.ts           agent registry (claude, codex, mock) + availability
+    agents.ts           agent registry (claude, codex, opencode, mock) + availability
     manager.ts          WorkspaceManager: the orchestrator (spawn/stream/merge)
     store.ts            JSON persistence of workspaces across restarts
+    prompt.ts           Auto-improve prompt builder (repo context → agent prompt)
   tui/                  all UI — React/Ink
     App.tsx             top-level app, keybindings, view/scroll state
-    components/         WorkspaceList, DetailPane, NewWorkspaceForm, StatusBar
+    components/         WorkspaceList, DetailPane, NewWorkspaceForm, StatusBar, AutoImproveForm
+  __tests__/            vitest test suite (6 files, 104+ tests)
+    agents.test.ts, format.test.ts, detail.test.ts, manager.test.ts, sort.test.ts, store.test.ts
   index.tsx             entrypoint (opens the manager, mounts Ink, shell handoff)
 ```
 
@@ -102,8 +105,8 @@ state.
 
 ## Before you finish
 
-- Run `pnpm typecheck` (`tsc --noEmit`) — there is no test suite, so the type
-  checker is your safety net.
+- Run `pnpm test` (`vitest run`) and `pnpm typecheck` (`tsc --noEmit`) — the
+  test suite and type checker are your safety net.
 - Try it against a throwaway repo with `pnpm start <repo>`; the built-in `mock`
   agent needs no API tokens and exercises the full create / stream / reply / diff
   / merge flow.

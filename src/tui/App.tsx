@@ -22,14 +22,16 @@ type View = "output" | "diff";
 
 // Canned prompt sent to the workspace's agent when the user presses `S`. It
 // asks the agent to turn whatever feature it just built into a reusable skill,
-// grounded in the actual changes on the worktree's branch.
+// grounded in the actual changes on the worktree's branch. Agent-agnostic: the
+// agent reads this as plain text and writes a skill file appropriate to its
+// own skill format (Claude Code `.claude/skills/`, opencode skills, etc.).
 const SKILL_PROMPT =
-  "Create a Claude Code skill that captures the feature you just built in this " +
+  "Create a skill that captures the feature you just built in this " +
   "workspace. Review the changes on this worktree (diff against the base branch) " +
-  "to ground it, then write .claude/skills/<skill-name>/SKILL.md with YAML " +
-  "frontmatter (a kebab-case `name` and a one-line `description` of when to use " +
-  "it) plus concise instructions covering what the feature does, how to use it, " +
-  "and when to apply it.";
+  "to ground it, then write a skill definition with the appropriate format for " +
+  "your runtime: YAML frontmatter (a kebab-case `name` and a one-line " +
+  "`description` of when to use it) plus concise instructions covering what " +
+  "the feature does, how to use it, and when to apply it.";
 
 // One-line note shown (and bell rung) when a workspace newly needs attention.
 const ATTENTION_LABEL: Record<AttentionReason, string> = {
