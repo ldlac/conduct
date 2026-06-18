@@ -359,3 +359,133 @@ describe("WorkspaceManager integration", () => {
     expect(() => manager.shutdown()).not.toThrow();
   }, 15000);
 });
+
+/**
+ * Exercises the resumable (re-run-per-turn) agent path end to end against the
+ * real `opencode` backend, using a fake `opencode` on PATH so no model is
+ * needed. The fake records every invocation to a session log in the worktree,
+ * so we can assert the reply re-ran the CLI with `--continue` and the
+ * conversation accumulated across turns — the whole point of making opencode
+ * interactive.
+ */
+describe("WorkspaceManager — resumable agent (opencode)", () => {
+  let rTmp: string;
+  let rRepo: string;
+  let rManager: WorkspaceManager;
+  let savedHome: string | undefined;
+  let savedPath: string | undefined;
+
+  function waitDone(id: string, timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        rManager.off("update", onUpdate);
+        reject(new Error(`timeout waiting for ${id} to finish`));
+      }, timeoutMs);
+      const onUpdate = () => {
+        const ws = rManager.get(id);
+        if (ws && (ws.status === "done" || ws.status === "error") && !rManager.isRunning(id)) {
+          clearTimeout(timer);
+          rManager.off("update", onUpdate);
+          resolve();
+        }
+      };
+      rManager.on("update", onUpdate);
+      onUpdate();
+    });
+  }
+
+  beforeAll(async () => {
+    rTmp = fs.mkdtempSync(path.join(os.tmpdir(), "conduct-resume-test-"));
+    rRepo = path.join(rTmp, "repo");
+    await initRepo(rRepo);
+
+    // A stand-in `opencode` that needs no model: it appends each turn's message
+    // to a session log in the cwd (the worktree), tagging whether the turn was a
+    // resume (`--continue`) so the test can prove the conversation continued.
+    const binDir = path.join(rTmp, "bin");
+    fs.mkdirSync(binDir, { recursive: true });
+    const fake = path.join(binDir, "opencode");
+    fs.writeFileSync(
+      fake,
+      [
+        "#!/usr/bin/env bash",
+        "shift # drop the leading 'run'",
+        "cont=0; msg=''",
+        'while [ "$#" -gt 0 ]; do',
+        '  case "$1" in --continue) cont=1 ;; *) msg="$1" ;; esac; shift',
+        "done",
+        'if [ "$cont" -eq 1 ]; then echo "continue: $msg" >> conduct-session.log; echo "resumed: $msg";',
+        'else echo "session: $msg" >> conduct-session.log; echo "started: $msg"; fi',
+        "exit 0",
+        "",
+      ].join("\n"),
+    );
+    fs.chmodSync(fake, 0o755);
+
+    savedHome = process.env.HOME;
+    savedPath = process.env.PATH;
+    process.env.HOME = rTmp;
+    // Child processes inherit the parent's PATH (the manager spreads
+    // process.env), so prepending the fake's dir makes `opencode` resolve to it.
+    process.env.PATH = `${binDir}:${process.env.PATH ?? ""}`;
+
+    rManager = await WorkspaceManager.open(rRepo);
+  }, 30000);
+
+  afterAll(async () => {
+    if (rManager) rManager.shutdown();
+    await new Promise((r) => setTimeout(r, 200));
+    if (savedHome !== undefined) process.env.HOME = savedHome;
+    if (savedPath !== undefined) process.env.PATH = savedPath;
+    try { fs.rmSync(rTmp, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it("runs an initial turn, then continues the session on reply", async () => {
+    const ws = await rManager.createWorkspace({
+      title: "Resume flow",
+      prompt: "kick things off",
+      agentId: "opencode",
+    });
+
+    await waitDone(ws.id);
+
+    // The one-shot exited, so the workspace is idle and reviewable — and because
+    // it's a resumable agent, it can take a reply even though no process is live.
+    const after = rManager.get(ws.id)!;
+    expect(after.status).toBe("done");
+    expect(rManager.isRunning(ws.id)).toBe(false);
+    expect(rManager.acceptsInput(ws.id)).toBe(true);
+
+    // Reply: this must re-spawn `opencode run --continue <reply>`.
+    expect(rManager.sendInput(ws.id, "now go further")).toBe(true);
+    await waitDone(ws.id);
+
+    const log = fs.readFileSync(
+      path.join(after.path, "conduct-session.log"),
+      "utf8",
+    );
+    // Both turns landed, and the second came in over --continue (the resume).
+    expect(log).toContain("session: kick things off");
+    expect(log).toContain("continue: now go further");
+  }, 20000);
+
+  it("refuses a reply while a turn is in flight, accepts it once idle", async () => {
+    const ws = await rManager.createWorkspace({
+      title: "Idle gating",
+      prompt: "first",
+      agentId: "opencode",
+    });
+    await waitDone(ws.id);
+    // Idle now → replyable.
+    expect(rManager.acceptsInput(ws.id)).toBe(true);
+    expect(rManager.sendInput(ws.id, "second")).toBe(true);
+    // A turn is now in flight (process re-spawned); a further reply is refused
+    // until it finishes, so we don't interleave two turns on one session.
+    if (rManager.isRunning(ws.id)) {
+      expect(rManager.acceptsInput(ws.id)).toBe(false);
+      expect(rManager.sendInput(ws.id, "too soon")).toBe(false);
+    }
+    await waitDone(ws.id);
+    expect(rManager.acceptsInput(ws.id)).toBe(true);
+  }, 20000);
+});

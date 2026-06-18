@@ -259,10 +259,24 @@ export class WorkspaceManager extends EventEmitter {
     return created;
   }
 
-  private startAgent(ws: Workspace): void {
+  /**
+   * Spawn the agent process for a workspace and wire up its streams. `command`
+   * overrides what's run: omitted, it's the initial `buildCommand(prompt)`;
+   * passed, it's a resumed turn for a {@link AgentBackend.resumeCommand} agent
+   * (opencode), which re-runs the CLI per turn rather than holding a session
+   * open. Either way the workspace flips to `running`, the turn clock restarts,
+   * and stale conflicts are cleared.
+   */
+  private startAgent(
+    ws: Workspace,
+    command?: { cmd: string; args: string[]; env?: NodeJS.ProcessEnv },
+  ): void {
     const agent = getAgent(ws.agentId);
-    const { cmd, args, env } = agent.buildCommand(ws.prompt);
-    const interactive = typeof agent.encodeInput === "function";
+    const { cmd, args, env } = command ?? agent.buildCommand(ws.prompt);
+    // Persistent stdin session (Claude, mock): keep stdin open and stream the
+    // prompt/replies in. Resumable agents (opencode) get no stdin — each turn is
+    // a fresh process, so replies re-spawn via resumeCommand instead.
+    const usesStdin = typeof agent.encodeInput === "function";
     ws.status = "running";
     ws.awaitingInput = false;
     ws.pendingPermission = undefined;
@@ -295,9 +309,9 @@ export class WorkspaceManager extends EventEmitter {
       child = spawn(cmd, args, {
         cwd: ws.path,
         env: { ...process.env, ...cfgEnv, ...env },
-        // Interactive agents keep stdin open so we can stream the prompt and
-        // later replies in; one-shot agents get no stdin at all.
-        stdio: [interactive ? "pipe" : "ignore", "pipe", "pipe"],
+        // Stdin-session agents keep stdin open so we can stream the prompt and
+        // later replies in; one-shot and resumable agents get no stdin at all.
+        stdio: [usesStdin ? "pipe" : "ignore", "pipe", "pipe"],
       });
     } catch (err) {
       ws.status = "error";
@@ -308,8 +322,10 @@ export class WorkspaceManager extends EventEmitter {
 
     this.procs.set(ws.id, child);
 
-    // Deliver the initial prompt as the session's first message.
-    if (interactive && child.stdin) {
+    // Deliver the initial prompt as the session's first message. Only for
+    // stdin-session agents and only on the initial launch (no command override);
+    // resumed turns carry their message as a CLI argument instead.
+    if (usesStdin && !command && child.stdin) {
       child.stdin.write(agent.encodeInput!(ws.prompt));
     }
 
@@ -352,7 +368,7 @@ export class WorkspaceManager extends EventEmitter {
       // sendInput). Only flag "awaiting input" when that turn ended on a
       // question — a free-text "…?" (awaitsReply) or a captured structured
       // question — since a turn that merely finished the job shouldn't nag.
-      if (interactive && agent.turnEnded?.(raw)) {
+      if (usesStdin && agent.turnEnded?.(raw)) {
         ws.awaitingInput = (agent.awaitsReply?.(raw) ?? false) || !!ws.pendingQuestion;
         if (ws.status === "running") ws.status = "done";
         // The turn is over: the agent is idle, so stop its elapsed-time clock.
@@ -451,12 +467,28 @@ export class WorkspaceManager extends EventEmitter {
     return this.procs.has(id);
   }
 
-  /** Whether `id` is a running interactive agent that can take a typed reply. */
+  /** Whether `id` is an interactive agent that can take a typed reply right now. */
   acceptsInput(id: string): boolean {
-    const child = this.procs.get(id);
     const ws = this.workspaces.get(id);
-    if (!child?.stdin?.writable || !ws) return false;
-    return typeof getAgent(ws.agentId).encodeInput === "function";
+    if (!ws) return false;
+    const agent = getAgent(ws.agentId);
+    const child = this.procs.get(id);
+    // Stdin-session agents (Claude, mock): a live process with writable stdin.
+    if (typeof agent.encodeInput === "function") {
+      return !!child?.stdin?.writable;
+    }
+    // Resumable agents (opencode): no process lives between turns — a reply
+    // re-spawns the CLI to continue the session (see sendInput). So it can take
+    // input whenever it isn't already mid-turn and the worktree is on disk to
+    // resume in. `stopped` is included so a session left by a previous conduct
+    // run can be continued: opencode persists sessions on disk, so `--continue`
+    // still finds it.
+    if (typeof agent.resumeCommand === "function") {
+      return (
+        !child && !!ws.path && (ws.status === "done" || ws.status === "stopped")
+      );
+    }
+    return false;
   }
 
   /**
@@ -466,27 +498,45 @@ export class WorkspaceManager extends EventEmitter {
    * workspace can't currently take input.
    */
   sendInput(id: string, text: string): boolean {
-    const child = this.procs.get(id);
     const ws = this.workspaces.get(id);
-    if (!child?.stdin?.writable || !ws) return false;
+    if (!ws) return false;
     const agent = getAgent(ws.agentId);
-    if (!agent.encodeInput) return false;
-    child.stdin.write(agent.encodeInput(text));
-    ws.awaitingInput = false;
-    // Whatever the reply was, it answers (or supersedes) any pending question.
-    ws.pendingQuestion = undefined;
-    // A reply starts a new turn that may rewrite the worktree, so a conflict
-    // list from a prior merge attempt no longer reflects reality.
-    ws.conflicts = undefined;
-    // A reply kicks off a new turn: the agent is working again until it ends
-    // the turn (see onLine), so reflect that unless it's already terminal, and
-    // restart the elapsed-time clock for the fresh turn.
-    if (ws.status === "done" || ws.status === "stopped") {
-      ws.status = "running";
-      ws.runStartedAt = Date.now();
+
+    // Stdin-session agents (Claude, mock): write the reply to the live process.
+    if (typeof agent.encodeInput === "function") {
+      const child = this.procs.get(id);
+      if (!child?.stdin?.writable) return false;
+      child.stdin.write(agent.encodeInput(text));
+      ws.awaitingInput = false;
+      // Whatever the reply was, it answers (or supersedes) any pending question.
+      ws.pendingQuestion = undefined;
+      // A reply starts a new turn that may rewrite the worktree, so a conflict
+      // list from a prior merge attempt no longer reflects reality.
+      ws.conflicts = undefined;
+      // A reply kicks off a new turn: the agent is working again until it ends
+      // the turn (see onLine), so reflect that unless it's already terminal, and
+      // restart the elapsed-time clock for the fresh turn.
+      if (ws.status === "done" || ws.status === "stopped") {
+        ws.status = "running";
+        ws.runStartedAt = Date.now();
+      }
+      this.append(ws, `❯ ${text}`);
+      return true;
     }
-    this.append(ws, `❯ ${text}`);
-    return true;
+
+    // Resumable agents (opencode): there's no live process to write to, so a
+    // reply re-spawns the CLI to continue the session with this message.
+    // startAgent flips status→running, restarts the turn clock, clears stale
+    // conflicts, and logs the invocation; record the reply line first so it
+    // reads before that turn's output.
+    if (typeof agent.resumeCommand === "function") {
+      if (!this.acceptsInput(id)) return false;
+      this.append(ws, `❯ ${text}`);
+      this.startAgent(ws, agent.resumeCommand(text));
+      return true;
+    }
+
+    return false;
   }
 
   /**

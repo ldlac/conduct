@@ -397,13 +397,17 @@ const codex: AgentBackend = {
 };
 
 /**
- * opencode CLI, non-interactive. `opencode run <message>` executes a single
- * turn in print mode and exits; its stdout is already human-readable, so no
- * stream-json parsing is needed (unlike Claude). It runs as a one-shot like
- * Codex rather than a persistent stdin session: the prompt is passed as the
- * positional message, and when the process exits the turn is done and the
- * workspace becomes reviewable. CONDUCT_OPENCODE_ARGS injects extra flags
- * (e.g. `--model provider/model`).
+ * opencode CLI, conversational across turns. `opencode run <message>` executes
+ * one turn in print mode and exits; its stdout is already human-readable, so no
+ * stream-json parsing is needed (unlike Claude). Unlike a persistent stdin
+ * session, opencode resumes by *re-running*: each follow-up is a fresh
+ * `opencode run --continue <message>` that picks up the most recent session in
+ * the worktree's directory (see {@link AgentBackend.resumeCommand}). Because
+ * every conduct workspace is its own worktree directory, `--continue` is scoped
+ * to that workspace and never crosses into another — even though all worktrees
+ * share one git repository. The process exiting marks the turn's end, so the
+ * workspace becomes reviewable and can be replied to. CONDUCT_OPENCODE_ARGS
+ * injects extra flags (e.g. `--model provider/model`) on every turn.
  */
 const opencode: AgentBackend = {
   id: "opencode",
@@ -413,15 +417,21 @@ const opencode: AgentBackend = {
     const extra = splitArgs(process.env.CONDUCT_OPENCODE_ARGS);
     return { cmd: "opencode", args: ["run", ...extra, prompt] };
   },
+  resumeCommand(text) {
+    const extra = splitArgs(process.env.CONDUCT_OPENCODE_ARGS);
+    return { cmd: "opencode", args: ["run", "--continue", ...extra, text] };
+  },
 };
 
 /**
- * opencode with all permission checks bypassed. Same one-shot invocation as
- * {@link opencode} but injects `permission: "allow"` into opencode's config
+ * opencode with all permission checks bypassed. Same conversational re-run model
+ * as {@link opencode} but injects `permission: "allow"` into opencode's config
  * via the OPENCODE_CONFIG_CONTENT escape hatch so every tool (Bash, edit,
- * fetch, etc.) is automatically approved. Use this variant when a task needs
- * unrestricted tool access — the worktree + merge review remains the safety
- * boundary. CONDUCT_OPENCODE_ARGS still appends extra flags here too.
+ * fetch, etc.) is automatically approved. The env is set on both the initial and
+ * the resumed invocation so the bypass holds across every turn. Use this variant
+ * when a task needs unrestricted tool access — the worktree + merge review
+ * remains the safety boundary. CONDUCT_OPENCODE_ARGS still appends extra flags
+ * here too.
  */
 const opencodeAllPerms: AgentBackend = {
   ...opencode,
@@ -432,6 +442,14 @@ const opencodeAllPerms: AgentBackend = {
     return {
       cmd: "opencode",
       args: ["run", ...extra, prompt],
+      env: { OPENCODE_CONFIG_CONTENT: '{"permission":"allow"}' },
+    };
+  },
+  resumeCommand(text) {
+    const extra = splitArgs(process.env.CONDUCT_OPENCODE_ARGS);
+    return {
+      cmd: "opencode",
+      args: ["run", "--continue", ...extra, text],
       env: { OPENCODE_CONFIG_CONTENT: '{"permission":"allow"}' },
     };
   },
