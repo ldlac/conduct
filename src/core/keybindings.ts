@@ -38,6 +38,8 @@ export const KEYBINDINGS: Keybinding[] = [
   // Detail view
   { keys: "o / ↵", description: "output view (tails live)", category: "detail" },
   { keys: "d", description: "diff view", category: "detail" },
+  { keys: "[ / ]", description: "previous / next file in diff", category: "detail" },
+  { keys: "Tab / ⇧Tab", description: "switch to next / previous workspace", category: "detail" },
   { keys: "/", description: "search the output or diff text", category: "detail" },
   { keys: "n / N (p)", description: "next / previous search match", category: "detail" },
   { keys: "i", description: "reply to the agent (answer a question)", category: "detail" },
@@ -65,7 +67,7 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 export const MODE_HINTS: Record<string, string> = {
   list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
   detail:
-    "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
+    "↵/o output · d diff · [/] files · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
   "auto-improve": "pick focus · pick agent · set count · esc cancel",
 };

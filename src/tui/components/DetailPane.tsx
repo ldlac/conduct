@@ -29,6 +29,12 @@ interface Props {
   onReplyChange: (v: string) => void;
   onReplySubmit: () => void;
   onReplyCancel: () => void;
+  /** Current diff file path for file-by-file navigation. */
+  diffFilePath?: string;
+  /** Total number of files in the diff (for "file X/Y" display). */
+  diffFileCount?: number;
+  /** Zero-based index of the current file being displayed. */
+  diffFileIndex?: number;
   /** Active search query; when set, matching lines are highlighted. */
   searchQuery?: string;
   /** Display-row indices of every search match, in order. */
@@ -74,6 +80,26 @@ export function wrapLine(line: string, width: number): string[] {
     rows.push(line.slice(i, i + width));
   }
   return rows;
+}
+
+export interface DiffFileInfo {
+  path: string;
+  content: string;
+}
+
+export function parseDiffFiles(diff: string): DiffFileInfo[] {
+  if (!diff) return [];
+  const parts = diff.split("\ndiff --git ");
+  const files: DiffFileInfo[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    let content = parts[i];
+    if (i > 0) content = "diff --git " + content;
+    const firstLine = content.split("\n")[0];
+    const m = firstLine.match(/ b\/(.+)/);
+    const path = m ? m[1] : firstLine;
+    files.push({ path, content });
+  }
+  return files;
 }
 
 /** Total number of display rows `lines` occupy once wrapped to `width`. */
@@ -132,6 +158,9 @@ export function DetailPane({
   onReplyChange,
   onReplySubmit,
   onReplyCancel,
+  diffFilePath,
+  diffFileCount,
+  diffFileIndex,
   searchQuery,
   searchResults,
   searchCurrentRow,
@@ -238,6 +267,16 @@ export function DetailPane({
       </Text>
       <Text dimColor>
         {view === "diff" ? "— diff —" : "— output —"}
+        {diffFilePath && diffFileCount && diffFileCount > 1 ? (
+          <Text>
+            {" "}[{diffFileIndex != null ? diffFileIndex + 1 : 1}/{diffFileCount}]{" "}
+            <Text color="cyan">{diffFilePath}</Text>
+          </Text>
+        ) : diffFilePath ? (
+          <Text>
+            {" "}<Text color="cyan">{diffFilePath}</Text>
+          </Text>
+        ) : null}
         {position}
         {searchQuery ? (
           <Text>
