@@ -12,6 +12,7 @@ import {
   type DiffFileInfo,
 } from "./components/DetailPane.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { QuestionPrompt } from "./components/QuestionPrompt.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import {
@@ -72,6 +73,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // When set, the detail pane shows a reply box that feeds the agent's stdin.
   const [composing, setComposing] = useState(false);
   const [reply, setReply] = useState("");
+  // When true, the detail pane shows the structured option picker for the
+  // selected workspace's pending question (Claude's AskUserQuestion) instead of
+  // the output/reply box. The picker sends the chosen option(s) back to the
+  // agent; see answerCurrent and QuestionPrompt.
+  const [answering, setAnswering] = useState(false);
   // When true, the open reply box composes a *broadcast*: the typed message is
   // sent to every marked workspace at once (see doBroadcast) instead of just the
   // selected one. Reuses the same compose box and `reply` buffer as a single
@@ -196,6 +202,13 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   );
   const current = ordered[selectedIndex];
 
+  // Close the question picker if its pending question goes away (the agent
+  // exited, was restarted, or the question was answered elsewhere), so we never
+  // leave the picker open — and the keyboard captured — with nothing to answer.
+  useEffect(() => {
+    if (answering && !current?.pendingQuestion) setAnswering(false);
+  }, [answering, current]);
+
   // Layout widths, needed up front so the scroll geometry can account for line
   // wrapping at the pane's exact text width.
   const listWidth = Math.min(40, Math.floor(size.cols * 0.35));
@@ -303,6 +316,19 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       const trimmed = text.trim();
       if (!ws || !trimmed) return;
       if (!manager.sendInput(ws.id, trimmed)) {
+        flash("agent is not accepting input");
+      }
+    },
+    [manager, flash],
+  );
+
+  const answerCurrent = useCallback(
+    (ws: Workspace | undefined, selections: string[][]) => {
+      setAnswering(false);
+      if (!ws) return;
+      if (manager.answerQuestion(ws.id, selections)) {
+        flash(`answered ${ws.title}`);
+      } else {
         flash("agent is not accepting input");
       }
     },
@@ -566,6 +592,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     scroll, setScroll,
     followTail, setFollowTail,
     composing, setComposing,
+    answering, setAnswering,
     broadcasting, setBroadcasting,
     reply, setReply,
     searching, setSearching,
@@ -649,6 +676,21 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           sortLabel={SORT_LABELS[sortMode]}
           marks={marks}
         />
+        {answering && current?.pendingQuestion ? (
+          <QuestionPrompt
+            question={current.pendingQuestion}
+            title={current.title}
+            width={detailWidth}
+            height={bodyHeight}
+            onSubmit={(selections) => answerCurrent(current, selections)}
+            onCancel={() => setAnswering(false)}
+            onFreeText={() => {
+              setAnswering(false);
+              setReply("");
+              setComposing(true);
+            }}
+          />
+        ) : (
         <DetailPane
           ws={current}
           view={view}
@@ -676,6 +718,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           searchResults={searchResults}
           searchCurrentRow={searchCurrentRow}
         />
+        )}
       </Box>
       <StatusBar
         mode={mode}

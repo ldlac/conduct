@@ -47,6 +47,37 @@ export type ControlEvent =
   | { kind: "ack"; reply: string };
 
 /**
+ * One multiple-choice question the agent asked the user to pick from, mirroring
+ * the shape of Claude Code's `AskUserQuestion` tool input.
+ */
+export interface QuestionItem {
+  /** The question prompt, e.g. "Which database should we use?". */
+  question: string;
+  /** Short label/topic for the question, e.g. "Database". */
+  header: string;
+  /** Whether more than one option may be selected. */
+  multiSelect: boolean;
+  /** The choices offered; each has a short label and a longer description. */
+  options: Array<{ label: string; description?: string }>;
+}
+
+/**
+ * A structured question the agent asked via a dedicated question tool (Claude
+ * Code's `AskUserQuestion`). Unlike a free-text question that just ends a turn
+ * with "…?", this carries selectable options, so the UI can present a picker
+ * and the user answers by choosing rather than typing. Produced by
+ * {@link AgentBackend.parseQuestion}; the chosen option(s) are sent back to the
+ * agent as an ordinary follow-up message (see
+ * {@link manager.WorkspaceManager.answerQuestion}).
+ */
+export interface AgentQuestion {
+  /** The questions to answer, in order (usually one). */
+  questions: QuestionItem[];
+  /** The tool-use id that asked, kept for correlation/debugging. */
+  toolUseId?: string;
+}
+
+/**
  * How to order workspaces in the list. `group` is the default: lifecycle stage
  * (running, done, merged, …) then creation time. The others are flat sorts
  * that ignore lifecycle grouping entirely.
@@ -119,6 +150,16 @@ export interface Workspace {
    * (a request from a dead process can never be answered).
    */
   pendingPermission?: PermissionRequest;
+  /**
+   * For interactive agents that ask multiple-choice questions through a
+   * dedicated tool (Claude Code's `AskUserQuestion`): the question(s) the agent
+   * is waiting on, with their selectable options (see
+   * {@link AgentBackend.parseQuestion}). Set when the turn ends carrying such a
+   * question and cleared once answered or when a new turn starts. When present,
+   * the UI shows an option picker instead of (or alongside) the plain reply box;
+   * {@link awaitingInput} is also set so the workspace flags for attention.
+   */
+  pendingQuestion?: AgentQuestion;
   /**
    * Cumulative token usage and cost for this workspace's agent session, summed
    * across every turn the agent reported usage for (see
@@ -208,6 +249,16 @@ export interface AgentBackend {
    * it can run (or skip) the tool and continue.
    */
   encodePermission?(req: PermissionRequest, allow: boolean): string;
+  /**
+   * For interactive agents that ask multiple-choice questions through a
+   * dedicated tool: classify one raw stdout line as such a question, returning
+   * its structured options, or null if the line isn't one. In Claude Code's
+   * headless mode the tool call surfaces as an ordinary `tool_use` block (not a
+   * control request) and is auto-denied by the CLI, so the manager captures the
+   * question here and re-asks the user, sending the chosen option(s) back as a
+   * normal follow-up message (see {@link encodeInput}).
+   */
+  parseQuestion?(line: string): AgentQuestion | null;
   /**
    * For agents that report token usage in their output: extract the usage for
    * the turn this raw stdout line represents (Claude Code carries it on each

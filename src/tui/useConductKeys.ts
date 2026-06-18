@@ -28,6 +28,8 @@ export interface HandlerState {
   setFollowTail: (f: boolean) => void;
   composing: boolean;
   setComposing: (c: boolean) => void;
+  answering: boolean;
+  setAnswering: (a: boolean) => void;
   broadcasting: boolean;
   setBroadcasting: (b: boolean) => void;
   reply: string;
@@ -89,7 +91,17 @@ export interface HandlerState {
 
 export function useConductKeys(s: HandlerState): void {
   const { exit } = useApp();
-  const isActive = s.mode !== "new" && s.mode !== "auto-improve" && !s.composing;
+  // While the question picker is open it owns the keyboard (see QuestionPrompt),
+  // just like the reply box does while composing. Only yield the keyboard when
+  // there's actually a question mounted, so a stale `answering` flag (its
+  // question vanished) can't leave the main handler dead until the effect that
+  // resets it runs.
+  const pickerOpen = s.answering && !!s.current?.pendingQuestion;
+  const isActive =
+    s.mode !== "new" &&
+    s.mode !== "auto-improve" &&
+    !s.composing &&
+    !pickerOpen;
 
   useInput(
     (input, key) => {
@@ -136,6 +148,18 @@ export function useConductKeys(s: HandlerState): void {
             }
             return;
           }
+        }
+        // A structured question takes priority over the plain reply box: `i`
+        // opens the option picker (in detail view) instead of the text field.
+        if (input === "i" && s.current?.pendingQuestion) {
+          if (!s.manager.acceptsInput(s.current.id)) {
+            s.flash("agent is not running / not interactive");
+            return;
+          }
+          s.setMode("detail");
+          s.setView("output");
+          s.setAnswering(true);
+          return;
         }
         if (key.escape && s.hasMarks) {
           s.clearMarks();

@@ -252,6 +252,10 @@ export function DetailPane({
           <Text color="yellow" bold>
             {" · "}⏸ allow {ws.pendingPermission.toolName}? (y/n)
           </Text>
+        ) : ws.pendingQuestion ? (
+          <Text color="yellow" bold>
+            {" · "}❓ asked a question (i to answer)
+          </Text>
         ) : (
           ws.awaitingInput &&
           !composing && (

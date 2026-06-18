@@ -179,7 +179,7 @@ pnpm start ../my-repo   # or point at another repo
 | `d`                | diff view                         |
 | `/`                | search the output or diff text    |
 | `n` / `N` (`p`)    | next / previous search match      |
-| `i`                | reply to the agent (answer a Q)   |
+| `i`                | reply to the agent; opens an option picker for a multiple-choice question |
 | `c`                | shell in the worktree             |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
@@ -201,6 +201,16 @@ When an agent ends a turn by asking a question the detail header shows
 `awaiting input (i to reply)`. A turn that just finishes the work does not flag
 this (the agent isn't waiting on you), but the session stays alive so you can
 still press `i` to steer it further.
+
+When Claude asks a structured multiple-choice question (its `AskUserQuestion`
+tool), the workspace shows a `❓` marker and the header reads
+`❓ asked a question (i to answer)`. Press `i` to open an option picker instead
+of the plain reply box: move with `↑`/`↓`, pick with `↵` (or a number key), and
+your choice is sent back to the agent as the next turn. For a multi-select
+question, `Space` toggles options and `↵` confirms. Press `t` in the picker to
+type a free-text answer instead, or `esc` to back out. (Headless Claude Code
+can't pop its own question dialog, so without this the question would simply be
+dismissed and the turn would end unanswered — conduct re-asks it for you.)
 
 The session stays alive across turns so you can keep steering it, but the
 workspace no longer shows `running` the whole time: when a turn ends the agent
@@ -263,7 +273,7 @@ src/
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/
     App.tsx      Ink app + keybindings
-    components/  list, detail pane, new-workspace form, status bar
+    components/  list, detail pane, question picker, new-workspace form, status bar
   index.tsx      entrypoint
 ```
 
