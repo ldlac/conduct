@@ -20,7 +20,7 @@ describe("cloneTitle", () => {
   });
 
   it("handles empty title", () => {
-    expect(cloneTitle("")).toBe(" (copy)");
+    expect(cloneTitle("")).toBe("Workspace (copy)");
   });
 
   it("handles titles with parentheses", () => {

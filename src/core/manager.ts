@@ -53,6 +53,8 @@ export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, Workspace>();
   private procs = new Map<string, ChildProcess>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Serializes concurrent save calls so at most one write is in flight. */
+  private savePromise: Promise<void> | null = null;
   readonly workspacesRoot: string;
 
   private constructor(
@@ -144,10 +146,21 @@ export class WorkspaceManager extends EventEmitter {
   /**
    * Persist state immediately, canceling any pending debounced save. Used
    * before critical operations where losing state would orphan workspaces.
+   * Serializes via an internal promise chain so at most one write is in flight.
    */
   async flushSave(): Promise<void> {
     this.cancelSave();
-    await saveState(this.workspacesRoot, this.baseBranch, this.snapshot());
+    // Chain onto any in-flight save to serialize writes and prevent races.
+    const prev = this.savePromise;
+    this.savePromise = (async () => {
+      try {
+        await prev;
+      } catch {
+        /* ignore errors from prior saves */
+      }
+      await saveState(this.workspacesRoot, this.baseBranch, this.snapshot());
+    })();
+    await this.savePromise;
   }
 
   /**
@@ -595,8 +608,8 @@ export class WorkspaceManager extends EventEmitter {
     this.cancelSave();
     try {
       saveStateSync(this.workspacesRoot, this.baseBranch, this.snapshot());
-    } catch {
-      /* nothing useful to do as the process is exiting */
+    } catch (err) {
+      console.error("conduct: failed to save state on exit:", err);
     }
   }
 
@@ -639,12 +652,13 @@ export function sumUsage(workspaces: Workspace[]): TokenUsage | undefined {
  * a pile of identical "(copy)" names.
  */
 export function cloneTitle(title: string): string {
-  const m = title.match(/^(.*?) \(copy(?: (\d+))?\)$/);
+  const base = title || "Workspace";
+  const m = base.match(/^(.*?) \(copy(?: (\d+))?\)$/);
   if (m) {
     const n = m[2] ? parseInt(m[2], 10) + 1 : 2;
     return `${m[1]} (copy ${n})`;
   }
-  return `${title} (copy)`;
+  return `${base} (copy)`;
 }
 
 async function pathExists(p: string): Promise<boolean> {

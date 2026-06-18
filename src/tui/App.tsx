@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Box, useApp, useInput, useStdout } from "ink";
+import { Box, useStdout } from "ink";
 import { sumUsage, type WorkspaceManager } from "../core/manager.js";
 import type { AttentionReason, SortMode, Workspace } from "../core/types.js";
 import { SORT_LABELS, WorkspaceList, sortWorkspaces } from "./components/WorkspaceList.js";
@@ -16,22 +16,10 @@ import {
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
 import { AutoImproveForm } from "./components/AutoImproveForm.js";
+import { useConductKeys } from "./useConductKeys.js";
 
 type Mode = "list" | "detail" | "new" | "auto-improve";
 type View = "output" | "diff";
-
-// Canned prompt sent to the workspace's agent when the user presses `S`. It
-// asks the agent to turn whatever feature it just built into a reusable skill,
-// grounded in the actual changes on the worktree's branch. Agent-agnostic: the
-// agent reads this as plain text and writes a skill file appropriate to its
-// own skill format (Claude Code `.claude/skills/`, opencode skills, etc.).
-const SKILL_PROMPT =
-  "Create a skill that captures the feature you just built in this " +
-  "workspace. Review the changes on this worktree (diff against the base branch) " +
-  "to ground it, then write a skill definition with the appropriate format for " +
-  "your runtime: YAML frontmatter (a kebab-case `name` and a one-line " +
-  "`description` of when to use it) plus concise instructions covering what " +
-  "the feature does, how to use it, and when to apply it.";
 
 // One-line note shown (and bell rung) when a workspace newly needs attention.
 const ATTENTION_LABEL: Record<AttentionReason, string> = {
@@ -56,7 +44,6 @@ interface Props {
 }
 
 export function App({ manager, agents, onShell, initialSelectedId }: Props) {
-  const { exit } = useApp();
   const { stdout } = useStdout();
 
   const [items, setItems] = useState<Workspace[]>(manager.snapshot());
@@ -415,283 +402,31 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     flash(`restarted ${count} of ${targets.length} marked`);
   }, [manager, flash, ordered, markedIds, clearMarks]);
 
-  useInput(
-    (input, key) => {
-      setMessage(undefined);
-
-      // The help cheat-sheet is a modal: while it's up, any key dismisses it and
-      // nothing else fires.
-      if (showHelp) {
-        setShowHelp(false);
-        return;
-      }
-
-      // While the rename box is open it owns the keyboard, same as the filter
-      // box: type to edit the title, Enter to commit, Esc to abandon the edit.
-      if (renaming) {
-        if (key.escape) {
-          setRenaming(false);
-          setRenameText("");
-        } else if (key.return) {
-          if (current && manager.renameWorkspace(current.id, renameText)) {
-            flash(`renamed to ${renameText.trim()}`);
-          }
-          setRenaming(false);
-          setRenameText("");
-        } else if (key.backspace || key.delete) {
-          setRenameText((t) => t.slice(0, -1));
-        } else if (input && !key.ctrl && !key.meta) {
-          setRenameText((t) => t + input);
-        }
-        return;
-      }
-
-      // While the filter box is open it owns the keyboard: type to narrow the
-      // list, Enter to apply and return to navigation (the query stays active),
-      // Esc to clear it. This sits above every other binding so letters like
-      // n/d/q build the query instead of triggering their commands.
-      if (filtering) {
-        if (key.escape) {
-          setFiltering(false);
-          setFilter("");
-        } else if (key.return) {
-          setFiltering(false);
-        } else if (key.backspace || key.delete) {
-          setFilter((f) => f.slice(0, -1));
-        } else if (input && !key.ctrl && !key.meta) {
-          setFilter((f) => f + input);
-        }
-        return;
-      }
-
-      // While the search box is open (detail mode) it owns the keyboard: type
-      // to build the query, Enter to commit, Esc to abandon.
-      if (searching) {
-        if (key.escape) {
-          setSearching(false);
-          setSearchQuery("");
-        } else if (key.return) {
-          setSearching(false);
-          if (searchResults.length > 0) {
-            setSearchIndex(0);
-            setScroll(searchResults[0]);
-          }
-        } else if (key.backspace || key.delete) {
-          setSearchQuery((q) => q.slice(0, -1));
-        } else if (input && !key.ctrl && !key.meta) {
-          setSearchQuery((q) => q + input);
-        }
-        return;
-      }
-
-      if (mode === "list" || mode === "detail") {
-        // A pending permission request blocks the selected agent, so answering
-        // it takes precedence over the normal bindings: y allows, n denies.
-        // (n is otherwise "new workspace"; while a prompt is up it means deny,
-        // matching the y/n hint shown on the workspace.)
-        if (current?.pendingPermission) {
-          if (input === "y" || input === "n") {
-            const allow = input === "y";
-            const tool = current.pendingPermission.toolName;
-            if (manager.respondPermission(current.id, allow)) {
-              flash(`${allow ? "allowed" : "denied"} ${tool}`);
-            }
-            return;
-          }
-        }
-        // Clear marks on Esc before falling through to mode-specific handlers.
-        if (key.escape && hasMarks) {
-          clearMarks();
-          return;
-        }
-        if (input === "q" || (key.ctrl && input === "c")) {
-          manager.shutdown();
-          exit();
-          return;
-        }
-        if (input === "n") {
-          setMode("new");
-          return;
-        }
-        if (input === " " && current) {
-          toggleMark(current.id);
-          return;
-        }
-        if (input === "m") {
-          if (hasMarks) {
-            void doMergeMany();
-          } else {
-            void doMerge(current);
-          }
-          return;
-        }
-        if (input === "s") {
-          if (current) {
-            manager.stop(current.id);
-            flash(`stopping ${current.title}`);
-          }
-          return;
-        }
-        if (input === "x") {
-          if (hasMarks) {
-            void doArchiveMany();
-          } else {
-            void doArchive(current);
-          }
-          return;
-        }
-        if (input === "S") {
-          if (!current) return;
-          if (manager.sendInput(current.id, SKILL_PROMPT)) {
-            flash(`asked ${current.title} to build a skill`);
-          } else {
-            flash("agent is not running / not interactive");
-          }
-          return;
-        }
-        if (input === "R") {
-          if (hasMarks) {
-            void doRestartMany();
-          } else {
-            void doRestart(current);
-          }
-          return;
-        }
-        if (input === "c") {
-          if (!current?.path) {
-            flash("no worktree to jump into yet");
-          } else if (current.status === "archived") {
-            flash("worktree was removed (archived)");
-          } else {
-            const msg = onShell(current);
-            if (msg) flash(msg);
-          }
-          return;
-        }
-        if (input === "e") {
-          if (current) {
-            setRenameText(current.title);
-            setRenaming(true);
-          } else {
-            flash("no workspace to rename");
-          }
-          return;
-        }
-        if (input === "C") {
-          void doClone(current);
-          return;
-        }
-        if (input === "A") {
-          if (agents.length === 1) {
-            void doAutoImprove(agents[0].id);
-          } else {
-            setMode("auto-improve");
-          }
-          return;
-        }
-        if (input === "?") {
-          setShowHelp(true);
-          return;
-        }
-      }
-
-      if (mode === "list") {
-        if (key.upArrow || input === "k")
-          setSelectedId(ordered[Math.max(0, selectedIndex - 1)]?.id);
-        else if (key.downArrow || input === "j")
-          setSelectedId(
-            ordered[Math.min(ordered.length - 1, selectedIndex + 1)]?.id,
-          );
-        else if (key.return) {
-          setMode("detail");
-          setView("output");
-          setFollowTail(true);
-        } else if (input === "d") {
-          setMode("detail");
-          setView("diff");
-          void loadDiff(current);
-        } else if (input === "/") {
-          setFiltering(true);
-        } else if (key.tab) {
-          const cycle: SortMode[] = ["group", "alpha", "newest", "oldest"];
-          const idx = cycle.indexOf(sortMode);
-          const next = cycle[(idx + 1) % cycle.length];
-          setSortMode(next);
-          flash(`sort: ${SORT_LABELS[next]}`);
-          return;
-        }
-        return;
-      }
-
-      if (mode === "detail") {
-        // Search navigation within the detail view: `n` cycles forward through
-        // matches, `N`/`p` cycles backward. Only active when there are results
-        // (pressing n when there are none falls through to the shared binding).
-        if (searchResults.length > 0) {
-          if (input === "n") {
-            const next = (searchIndex + 1) % searchResults.length;
-            setSearchIndex(next);
-            setScroll(searchResults[next]);
-            return;
-          }
-          if (input === "N" || input === "p") {
-            const prev =
-              (searchIndex - 1 + searchResults.length) % searchResults.length;
-            setSearchIndex(prev);
-            setScroll(searchResults[prev]);
-            return;
-          }
-        }
-        if (key.escape) {
-          setMode("list");
-          return;
-        }
-        if (input === "/") {
-          setSearchQuery("");
-          setSearching(true);
-          return;
-        }
-        if (input === "i") {
-          if (manager.acceptsInput(current?.id ?? "")) {
-            setView("output");
-            setReply("");
-            setComposing(true);
-          } else {
-            flash("agent is not running / not interactive");
-          }
-          return;
-        }
-        if (input === "o" || key.return) {
-          setView("output");
-          setFollowTail(true);
-          return;
-        }
-        if (input === "d") {
-          setView("diff");
-          void loadDiff(current);
-          return;
-        }
-        if (input === "r" && view === "diff") {
-          void loadDiff(current);
-          return;
-        }
-        // Both views scroll; the output view additionally re-follows the tail
-        // once the user scrolls back to the bottom.
-        let next: number | undefined;
-        if (key.upArrow || input === "k") next = topNow - 1;
-        else if (key.downArrow || input === "j") next = topNow + 1;
-        else if (key.pageUp) next = topNow - 10;
-        else if (key.pageDown) next = topNow + 10;
-        if (next !== undefined) {
-          const clamped = Math.max(0, Math.min(maxScroll, next));
-          setScroll(clamped);
-          if (view === "output") setFollowTail(clamped >= maxScroll);
-        }
-        return;
-      }
-    },
-    { isActive: mode !== "new" && mode !== "auto-improve" && !composing },
-  );
+  useConductKeys({
+    manager, agents, onShell,
+    mode, setMode,
+    view, setView,
+    scroll, setScroll,
+    followTail, setFollowTail,
+    composing, setComposing,
+    reply, setReply,
+    searching, setSearching,
+    searchQuery, setSearchQuery,
+    searchIndex, setSearchIndex,
+    filtering, setFiltering,
+    filter, setFilter,
+    renaming, setRenaming,
+    renameText, setRenameText,
+    showHelp, setShowHelp,
+    sortMode, setSortMode,
+    hasMarks, clearMarks, toggleMark,
+    current, ordered, selectedIndex,
+    searchResults, maxScroll, topNow,
+    doMerge, doRestart, doArchive, doClone, doAutoImprove,
+    doMergeMany, doArchiveMany, doRestartMany,
+    sendReply, loadDiff,
+    flash, setMessage, setSelectedId,
+  });
 
   if (showHelp) {
     return <HelpOverlay height={size.rows} />;

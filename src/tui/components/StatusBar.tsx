@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { TokenUsage } from "../../core/types.js";
 import { usageText } from "./WorkspaceList.js";
+import { MODE_HINTS } from "../../core/keybindings.js";
 
 interface Props {
   mode: "list" | "detail" | "new" | "auto-improve";
@@ -28,14 +29,6 @@ interface Props {
   /** The live search query text. */
   searchQuery?: string;
 }
-
-const HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · ? help · q quit",
-  detail:
-    "↵/o output · d diff · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
-  new: "fill the form · esc cancel",
-  "auto-improve": "pick an agent · esc cancel",
-};
 
 export function StatusBar({
   mode,
@@ -92,7 +85,7 @@ export function StatusBar({
       <Text inverse>
         {" "}
         {mode === "detail" ? `[${view}] ` : ""}
-        {HINTS[mode]}{" "}
+        {MODE_HINTS[mode]}{" "}
       </Text>
     </Box>
   );
