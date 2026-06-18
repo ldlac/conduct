@@ -12,6 +12,7 @@ export const KEYBINDINGS: Keybinding[] = [
   // List navigation
   { keys: "n", description: "new workspace(s) (agent, prompt, title, fan-out count)", category: "list" },
   { keys: "↑/↓ · k/j", description: "move selection", category: "list" },
+  { keys: "g/G", description: "go to top / bottom of the list", category: "list" },
   { keys: "↵", description: "open workspace (live output)", category: "list" },
   { keys: "d", description: "open workspace on the diff view", category: "list" },
   { keys: "/", description: "filter the list by title", category: "list" },
@@ -19,6 +20,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "Space", description: "toggle mark for batch operations", category: "list" },
   { keys: "i", description: "broadcast a message to all marked agents", category: "list" },
   { keys: "Esc", description: "clear all marks (when any are set)", category: "list" },
+  { keys: "Ctrl+a", description: "mark all workspaces", category: "list" },
 
   // Actions on selected workspace
   { keys: "e", description: "rename the workspace title", category: "actions" },
@@ -44,6 +46,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "n / N (p)", description: "next / previous search match", category: "detail" },
   { keys: "i", description: "reply to the agent; opens an option picker when it asked a multiple-choice question", category: "detail" },
   { keys: "↑/↓ · PgUp/PgDn", description: "scroll", category: "detail" },
+  { keys: "g/G", description: "scroll to top / bottom", category: "detail" },
   { keys: "r", description: "refresh the diff", category: "detail" },
   { keys: "esc", description: "back to the list", category: "detail" },
 ];
@@ -65,9 +68,9 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
+  list: "n new · Space mark · Ctrl+a mark all · ↑/↓ select · g/G top/bot · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · m merge · s stop · x archive · Alt+a archive merged · Alt+s stop all · Alt+r restart failed · ? help · q quit",
   detail:
-    "↵/o output · d diff · [/] files · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
+    "↵/o output · d diff · [/] files · g/G top/bot · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
   "auto-improve": "pick focus · pick agent · set count · esc cancel",
 };

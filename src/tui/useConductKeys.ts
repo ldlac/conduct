@@ -56,6 +56,7 @@ export interface HandlerState {
   setSortMode: (m: SortMode) => void;
   hasMarks: boolean;
   markedIds: string[];
+  setMarkedIds: (ids: string[]) => void;
   clearMarks: () => void;
   toggleMark: (id: string) => void;
 
@@ -159,6 +160,11 @@ export function useConductKeys(s: HandlerState): void {
           s.setMode("detail");
           s.setView("output");
           s.setAnswering(true);
+          return;
+        }
+        if (key.ctrl && input === "a") {
+          s.setMarkedIds(s.ordered.map((w) => w.id));
+          s.flash(`marked all ${s.ordered.length} workspace${s.ordered.length === 1 ? "" : "s"}`);
           return;
         }
         if (key.escape && s.hasMarks) {
@@ -333,7 +339,11 @@ function handleListMode(
   key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; tab?: boolean },
   s: HandlerState,
 ): void {
-  if (key.upArrow || input === "k")
+  if (input === "g")
+    s.setSelectedId(s.ordered[0]?.id);
+  else if (input === "G")
+    s.setSelectedId(s.ordered[s.ordered.length - 1]?.id);
+  else if (key.upArrow || input === "k")
     s.setSelectedId(s.ordered[Math.max(0, s.selectedIndex - 1)]?.id);
   else if (key.downArrow || input === "j")
     s.setSelectedId(
@@ -455,6 +465,16 @@ function handleDetailMode(
       s.setScroll(0);
       return;
     }
+  }
+  if (input === "g") {
+    s.setScroll(0);
+    s.setFollowTail(false);
+    return;
+  }
+  if (input === "G") {
+    s.setScroll(s.maxScroll);
+    if (s.view === "output") s.setFollowTail(true);
+    return;
   }
   let next: number | undefined;
   if (key.upArrow || input === "k") next = s.topNow - 1;
