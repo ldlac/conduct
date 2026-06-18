@@ -590,10 +590,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     confirming, setConfirming,
   });
 
-  if (confirming) {
-    return <ConfirmDialog message={confirming.label} />;
-  }
-
   if (showHelp) {
     return <HelpOverlay height={size.rows} />;
   }
@@ -642,7 +638,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }
 
   return (
-    <Box flexDirection="column" height={size.rows}>
+    <Box position="relative" flexDirection="column" height={size.rows}>
       <Box flexDirection="row" height={bodyHeight}>
         <WorkspaceList
           items={ordered}
@@ -696,6 +692,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         searching={searching}
         searchQuery={searchQuery}
       />
+      {confirming && (
+        <Box position="absolute" width="100%" height="100%">
+          <ConfirmDialog message={confirming.label} />
+        </Box>
+      )}
     </Box>
   );
 }
