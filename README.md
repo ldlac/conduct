@@ -62,6 +62,38 @@ a turn and is ready to review, asked a question, paused for a tool-permission
 request, or exited with an error. The bell fires once on the transition, not
 repeatedly while the workspace waits.
 
+## Comparing two workspaces side by side
+
+With several agents racing the same task, the diff of each is one view into what
+they produced. Mark exactly two workspaces with `Space`, then press `v` to open
+a **side-by-side diff comparison** — each workspace's diff rendered in its own
+panel so you can see the shape and scope of both attempts at once.
+
+In the comparison view:
+
+- `[` / `]` step through files on both sides in sync, so you see each
+  workspace's version of the same logical file side by side.
+- `Tab` switches keyboard focus between the left and right panels (the active
+  panel has a cyan border).
+- `↑` / `↓` scroll the focused panel; `PgUp` / `PgDn` scroll by 10 rows,
+  `g` / `G` jump to top / bottom.
+- `Esc` (or `v`) closes the comparison and returns to the list.
+
+Each panel header shows the workspace title, agent, and current file (with an
+`N/M` counter). The focused panel is highlighted so you always know which side
+is receiving scroll input.
+
+## Workspace notes
+
+Every workspace can carry free-text notes you author yourself. Open a workspace
+and press `a` in the detail view to add or edit notes; `↵` saves, `Esc` cancels.
+Existing notes are shown in the detail header and noted with a `📝` badge in the
+workspace list, so you can record what was tried, why it succeeded or failed,
+and any observations you want to revisit later.
+
+Notes survive restarts — they are persisted alongside the rest of the workspace
+state — and can be cleared by saving an empty note.
+
 ## Filtering the list
 
 With many workspaces in flight, press `/` to filter the list by title. Type to
@@ -184,6 +216,7 @@ pnpm start ../my-repo   # or point at another repo
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |
 | `w`                | pick winner — keep this attempt, archive the rest of its fan-out |
+| `v`                | diff: compare two marked workspaces side by side |
 | `c`                | jump into a shell in the workspace's worktree  |
 | `!`                | run a one-off command in the worktree (output streams in the shell view) |
 | `m`                | merge (selected, or all marked when marks exist) |
@@ -210,6 +243,7 @@ pnpm start ../my-repo   # or point at another repo
 | `i`                | reply to the agent; opens an option picker for a multiple-choice question |
 | `c`                | shell in the worktree             |
 | `!`                | run a command in the worktree (shell view) · `s` stops it |
+| `a`                | add / edit workspace notes (↵ save · esc cancel) |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
 | `w`                | pick winner — archive the rest of this fan-out |

@@ -22,6 +22,11 @@ interface Props {
   renaming?: boolean;
   /** The in-progress title edit (while renaming). */
   renameText?: string;
+  /** When true, the user is typing workspace notes; show the live edit in the
+   * status bar instead of the repo/message line. */
+  noting?: boolean;
+  /** The in-progress notes text (while noting). */
+  noteText?: string;
   /** Number of workspaces marked for batch operations. */
   markedCount?: number;
   /** When true, the user is typing a detail-pane search query. */
@@ -41,6 +46,8 @@ export function StatusBar({
   filter,
   renaming,
   renameText,
+  noting,
+  noteText,
   markedCount,
   searching,
   searchQuery,
@@ -65,6 +72,13 @@ export function StatusBar({
           <Text color="cyan">rename: </Text>
           {renameText}
           <Text color="cyan">▏</Text>
+          <Text dimColor> (↵ save · esc cancel)</Text>
+        </Text>
+      ) : noting ? (
+        <Text wrap="truncate">
+          <Text color="yellow">notes: </Text>
+          {noteText}
+          <Text color="yellow">▏</Text>
           <Text dimColor> (↵ save · esc cancel)</Text>
         </Text>
       ) : filtering ? (

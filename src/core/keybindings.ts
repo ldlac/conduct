@@ -40,6 +40,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "Alt+a", description: "archive all merged workspaces", category: "actions" },
   { keys: "Alt+s", description: "stop all running agents", category: "actions" },
   { keys: "Alt+r", description: "restart all stopped / failed agents", category: "actions" },
+  { keys: "v", description: "diff: compare two marked workspaces side by side", category: "actions" },
 
   // Detail view
   { keys: "o / ↵", description: "output view (tails live)", category: "detail" },
@@ -52,6 +53,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "i", description: "reply to the agent; opens an option picker when it asked a multiple-choice question", category: "detail" },
   { keys: "↑/↓ · PgUp/PgDn", description: "scroll", category: "detail" },
   { keys: "g/G", description: "scroll to top / bottom", category: "detail" },
+  { keys: "a", description: "edit workspace notes/annotations", category: "detail" },
   { keys: "r", description: "refresh the diff", category: "detail" },
   { keys: "!", description: "run a command in the worktree; output shows in the shell view", category: "detail" },
   { keys: "s", description: "in the shell view: stop the running command", category: "detail" },
@@ -75,9 +77,9 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · w winner · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · w winner · v compare · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
   detail:
-    "↵/o output · d diff · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
+    "↵/o output · d diff · a notes · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
 
 };

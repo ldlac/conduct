@@ -251,6 +251,14 @@ export interface Workspace {
    * available across restarts and the UI can surface it.
    */
   prUrl?: string;
+  /**
+   * User-authored notes/annotations attached to this workspace. Free text the
+   * user can add and edit from the detail view (press `a`) to record what was
+   * tried, why the workspace was archived/merged, or any other metadata that
+   * helps make sense of the experiment later. Persisted across restarts and
+   * indicated by a 📝 badge in the list and the detail header when non-empty.
+   */
+  notes?: string;
   exitCode?: number;
   error?: string;
   createdAt: number;

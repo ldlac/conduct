@@ -334,7 +334,17 @@ export function DetailPane({
             {" · "}⇡ pushed → {ws.pushedRemote}
           </Text>
         ) : null}
+        {ws.notes && (
+          <Text color="yellow">
+            {" · "}📝 notes
+          </Text>
+        )}
       </Text>
+      {ws.notes ? (
+        <Text dimColor wrap="truncate-end">
+          📝 {ws.notes}
+        </Text>
+      ) : null}
       <Text dimColor wrap="truncate-end">
         {view === "diff"
           ? "— diff —"
