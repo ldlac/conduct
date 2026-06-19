@@ -20,11 +20,9 @@ import {
   NewWorkspaceForm,
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
-import { AutoImproveForm } from "./components/AutoImproveForm.js";
-import type { AutoImproveFocus } from "../core/prompt.js";
 import { useConductKeys } from "./useConductKeys.js";
 
-type Mode = "list" | "detail" | "new" | "auto-improve";
+type Mode = "list" | "detail" | "new";
 type View = "output" | "diff" | "shell";
 
 // One-line note shown (and bell rung) when a workspace newly needs attention.
@@ -516,37 +514,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
-  const doAutoImprove = useCallback(async (agentId?: string, focus?: AutoImproveFocus, count?: number) => {
-    const id = agentId ?? agents[0]?.id;
-    if (!id) {
-      flash("no agents available");
-      return;
-    }
-    const agent = agents.find((a) => a.id === id);
-    flash("analyzing repo…");
-    try {
-      const prompt = await manager.buildAutoImprovePrompt(focus);
-      const created = await manager.createWorkspaces({
-        title: "Auto-improve",
-        prompt,
-        agentId: id,
-        count: count ?? 1,
-      });
-      if (created[0]) {
-        setSelectedId(created[0].id);
-        flash(
-          count && count > 1
-            ? `auto-improve launched ${count} × ${agent?.displayName ?? id}`
-            : `auto-improve launched with ${agent?.displayName ?? id}`,
-        );
-      }
-    } catch (err) {
-      flash(
-        `auto-improve failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }, [manager, flash, agents]);
-
   // Pick the winner of a fan-out: keep the selected attempt and archive the
   // other attempts of the same race (see manager.groupSiblings), the one-step
   // version of the documented "merge whichever came out best, then archive the
@@ -815,7 +782,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
     switchWorkspace, openCommand,
-    doMerge, doPushPr, doRestart, doSync, doArchive: doArchiveWithConfirm, doClone, doAutoImprove, doPruneSiblings,
+    doMerge, doPushPr, doRestart, doSync, doArchive: doArchiveWithConfirm, doClone, doPruneSiblings,
     doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doSyncMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,
@@ -830,21 +797,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }
 
   const config = manager.config;
-
-  if (mode === "auto-improve") {
-    return (
-      <AutoImproveForm
-        agents={agents}
-        defaultCount={config.defaultFanout}
-        defaultAgentId={config.defaultAgent}
-        onCancel={() => setMode("list")}
-        onSubmit={(focus, agentId, count) => {
-          setMode("list");
-          void doAutoImprove(agentId, focus, count);
-        }}
-      />
-    );
-  }
 
   if (mode === "new") {
     return (

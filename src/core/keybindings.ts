@@ -26,7 +26,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "e", description: "rename the workspace title", category: "actions" },
   { keys: "C", description: "clone — re-run this prompt in a fresh worktree", category: "actions" },
   { keys: "w", description: "pick winner — keep this attempt, archive the rest of its fan-out", category: "actions" },
-  { keys: "A", description: "auto-improve — analyze repo and improve it autonomously", category: "actions" },
+
   { keys: "c", description: "jump into a shell in the worktree", category: "actions" },
   { keys: "!", description: "run a one-off command in the worktree (output streams in the shell view)", category: "actions" },
   { keys: "m", description: "merge (selected or all marked)", category: "actions" },
@@ -75,9 +75,9 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · w winner · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · w winner · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
-  "auto-improve": "pick focus · pick agent · set count · esc cancel",
+
 };

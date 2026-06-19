@@ -1060,20 +1060,6 @@ export class WorkspaceManager extends EventEmitter {
     );
   }
 
-  /**
-   * Gather repo context and build a prompt that asks the agent to analyze and
-   * improve the codebase autonomously. Delegates to {@link buildAutoImprovePrompt}
-   * in `prompt.ts`.
-   */
-  async buildAutoImprovePrompt(
-    focus: "general" | "new-features" = "general",
-  ): Promise<string> {
-    const {
-      buildAutoImprovePrompt: build,
-    } = await import("./prompt.js");
-    return build(this.git.root, this.git, focus);
-  }
-
   async getDiff(id: string): Promise<string> {
     const ws = this.workspaces.get(id);
     if (!ws || !ws.path) return "";

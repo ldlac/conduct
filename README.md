@@ -339,8 +339,8 @@ per-repo defaults. Every field is optional, and an invalid value is ignored
 }
 ```
 
-- `defaultAgent` preselects that agent in the new-workspace and auto-improve
-  pickers (it must match an agent id: `claude`, `claude-all`, `codex`,
+- `defaultAgent` preselects that agent in the new-workspace
+  picker (it must match an agent id: `claude`, `claude-all`, `codex`,
   `opencode`, `opencode-all`, or `mock`). If the named agent isn't installed,
   the picker just starts on the first available one.
 - `defaultFanout` (1 to 8) prefills the "how many parallel workspaces" prompt.
@@ -382,7 +382,6 @@ src/
     agents.ts    agent registry (claude, codex, opencode, mock)
     store.ts     workspace persistence (load/save state across restarts)
     config.ts    per-repo conduct.json (default agent, fan-out, setup, env, agent args)
-    prompt.ts    builds the auto-improve prompt from repo context
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/
     App.tsx      Ink app + keybindings
