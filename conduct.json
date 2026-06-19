@@ -1,0 +1,4 @@
+{
+  "defaultAgent": "claude-all",
+  "setup": "pnpm install"
+}
