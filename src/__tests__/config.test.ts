@@ -122,4 +122,107 @@ describe("loadConfig", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  describe("prompts", () => {
+    it("parses prompts as an array of { label, prompt } objects", async () => {
+      writeConfig({
+        prompts: [
+          { label: "Add tests", prompt: "Add comprehensive tests to this project" },
+          { label: "Fix lint", prompt: "Fix all lint errors in the codebase" },
+        ],
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.prompts).toHaveLength(2);
+      expect(cfg.prompts![0]).toEqual({ label: "Add tests", prompt: "Add comprehensive tests to this project" });
+      expect(cfg.prompts![1]).toEqual({ label: "Fix lint", prompt: "Fix all lint errors in the codebase" });
+    });
+
+    it("parses prompts as a shorthand object mapping label -> prompt", async () => {
+      writeConfig({
+        prompts: {
+          "Add tests": "Write comprehensive tests",
+          "Fix lint": "Resolve all lint warnings",
+        },
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.prompts).toHaveLength(2);
+      expect(cfg.prompts![0]).toEqual({ label: "Add tests", prompt: "Write comprehensive tests" });
+      expect(cfg.prompts![1]).toEqual({ label: "Fix lint", prompt: "Resolve all lint warnings" });
+    });
+
+    it("drops entries with empty label or prompt from array form", async () => {
+      writeConfig({
+        prompts: [
+          { label: "Good", prompt: "Valid prompt" },
+          { label: "", prompt: "Empty label" },
+          { label: "No text", prompt: "" },
+        ],
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.prompts).toHaveLength(1);
+      expect(cfg.prompts![0].label).toBe("Good");
+    });
+
+    it("drops empty label or prompt entries from shorthand form", async () => {
+      writeConfig({
+        prompts: {
+          "": "Empty label",
+          "Valid": "Works fine",
+          "Blank": "",
+        },
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.prompts).toHaveLength(1);
+      expect(cfg.prompts![0].label).toBe("Valid");
+    });
+
+    it("leaves prompts unset when the array is empty or all entries are invalid", async () => {
+      writeConfig({ prompts: [] });
+      expect((await loadConfig(tmpDir)).prompts).toBeUndefined();
+      writeConfig({ prompts: [{ label: "", prompt: "" }] });
+      expect((await loadConfig(tmpDir)).prompts).toBeUndefined();
+    });
+
+    it("leaves prompts unset when the shorthand object is empty", async () => {
+      writeConfig({ prompts: {} });
+      expect((await loadConfig(tmpDir)).prompts).toBeUndefined();
+    });
+
+    it("rejects prompts that is not an array or object, warning", async () => {
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      writeConfig({ prompts: "not an array" });
+      expect((await loadConfig(tmpDir)).prompts).toBeUndefined();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("drops invalid entries from the array form, warning", async () => {
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      writeConfig({
+        prompts: [
+          { label: "Valid", prompt: "Works" },
+          "not an object",
+          { label: "Missing prompt" },
+        ],
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.prompts).toHaveLength(1);
+      expect(cfg.prompts![0].label).toBe("Valid");
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("coexists with other config fields", async () => {
+      writeConfig({
+        defaultAgent: "claude",
+        defaultFanout: 4,
+        prompts: [{ label: "Refactor", prompt: "Refactor the codebase" }],
+      });
+      const cfg = await loadConfig(tmpDir);
+      expect(cfg.defaultAgent).toBe("claude");
+      expect(cfg.defaultFanout).toBe(4);
+      expect(cfg.prompts).toHaveLength(1);
+      expect(cfg.prompts![0].label).toBe("Refactor");
+    });
+  });
 });

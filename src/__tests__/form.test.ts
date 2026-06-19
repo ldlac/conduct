@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   initialAgentIndex,
+  parseCount,
   type AgentInfo,
 } from "../tui/components/NewWorkspaceForm.js";
 
@@ -28,5 +29,23 @@ describe("initialAgentIndex", () => {
 
   it("falls back to zero on an empty agent list", () => {
     expect(initialAgentIndex([], "claude")).toBe(0);
+  });
+});
+
+describe("parseCount", () => {
+  it("returns 1 for empty string", () => {
+    expect(parseCount("")).toBe(1);
+  });
+
+  it("parses a plain number", () => {
+    expect(parseCount("3")).toBe(3);
+  });
+
+  it("clamps to MAX_FANOUT", () => {
+    expect(parseCount("999")).toBe(8);
+  });
+
+  it("returns 1 for non-numeric input", () => {
+    expect(parseCount("abc")).toBe(1);
   });
 });

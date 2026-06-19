@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import SelectInput from "ink-select-input";
 import { MAX_FANOUT } from "../../core/manager.js";
+import type { PromptPreset } from "../../core/config.js";
 
 export interface AgentInfo {
   id: string;
@@ -29,6 +30,8 @@ interface Props {
   defaultCount?: number;
   /** Agent id to pre-select in the picker (from conduct.json's defaultAgent). */
   defaultAgentId?: string;
+  /** Saved prompt presets from conduct.json, shown before the manual prompt entry. */
+  prompts?: PromptPreset[];
   onSubmit: (v: {
     title: string;
     prompt: string;
@@ -38,7 +41,13 @@ interface Props {
   onCancel: () => void;
 }
 
-type Step = "agent" | "prompt" | "title" | "count";
+type Step = "agent" | "preset" | "prompt" | "title" | "count";
+
+/**
+ * Label assigned to the synthetic "type a custom prompt" entry appended to the
+ * presets list so the picker has a way to reach the manual prompt field.
+ */
+const CUSTOM_PROMPT_LABEL = "Custom prompt…";
 
 /**
  * Parse the fan-out count field into a sane integer. Anything non-numeric or
@@ -46,17 +55,20 @@ type Step = "agent" | "prompt" | "title" | "count";
  * clamps the upper bound, but we mirror {@link MAX_FANOUT} here too so the
  * confirmation the user sees matches what actually launches.
  */
-function parseCount(text: string): number {
+export function parseCount(text: string): number {
   const n = Math.floor(Number(text.trim()));
   if (!Number.isFinite(n) || n < 1) return 1;
   return Math.min(MAX_FANOUT, n);
 }
 
-export function NewWorkspaceForm({ agents, defaultCount, defaultAgentId, onSubmit, onCancel }: Props) {
-  const [step, setStep] = useState<Step>("agent");
+export function NewWorkspaceForm({ agents, defaultCount, defaultAgentId, prompts, onSubmit, onCancel }: Props) {
+  const [step, setStep] = useState<Step>(prompts && prompts.length > 0 ? "agent" : "agent");
   const [agentId, setAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
+  // When a preset is selected, the prompt is pre-filled and the manual prompt
+  // step is skipped, so the user lands straight on the title field.
+  const [presetChosen, setPresetChosen] = useState(false);
   // How many parallel workspaces to spin up from this one prompt. Kept as the
   // raw text the user typed; coerced through parseCount on launch.
   const [count, setCount] = useState(String(defaultCount && defaultCount >= 1 ? Math.min(defaultCount, MAX_FANOUT) : 1));
@@ -80,7 +92,29 @@ export function NewWorkspaceForm({ agents, defaultCount, defaultAgentId, onSubmi
             initialIndex={initialAgentIndex(agents, defaultAgentId)}
             onSelect={(item) => {
               setAgentId(String(item.value));
-              setStep("prompt");
+              setStep(prompts && prompts.length > 0 ? "preset" : "prompt");
+            }}
+          />
+        </Box>
+      )}
+
+      {step === "preset" && prompts && (
+        <Box flexDirection="column">
+          <Text dimColor>Pick a saved prompt or type a custom one (↑/↓, Enter):</Text>
+          <SelectInput
+            items={[
+              ...prompts.map((p) => ({ label: p.label, value: p.prompt })),
+              { label: CUSTOM_PROMPT_LABEL, value: "" },
+            ]}
+            onSelect={(item) => {
+              const val = String(item.value);
+              if (val) {
+                setPrompt(val);
+                setPresetChosen(true);
+                setStep("title");
+              } else {
+                setStep("prompt");
+              }
             }}
           />
         </Box>
