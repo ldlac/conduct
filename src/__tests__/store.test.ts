@@ -62,10 +62,12 @@ describe("saveState and loadState round-trip", () => {
     expect(loaded[1].title).toBe("Second");
   });
 
-  it("drops transient runner state (shellOutput / shellRunning)", async () => {
+  it("drops transient runner state but keeps notes", async () => {
     const ws = makeWs({
       shellOutput: ["$ pnpm test", "ok", "[exited 0]"],
       shellRunning: true,
+      setupRunning: true,
+      notes: "Notes must survive even when transient fields are stripped",
     });
     await saveState(tmpDir, "main", [ws]);
 
@@ -74,8 +76,12 @@ describe("saveState and loadState round-trip", () => {
     // should survive to the next launch (see store.ts / runCommand).
     expect(loaded[0].shellOutput).toBeUndefined();
     expect(loaded[0].shellRunning).toBeUndefined();
-    // The agent transcript is unaffected.
+    expect(loaded[0].setupRunning).toBeUndefined();
+    // The agent transcript and user-authored notes survive.
     expect(loaded[0].output).toEqual(["line1", "line2", "line3"]);
+    expect(loaded[0].notes).toBe(
+      "Notes must survive even when transient fields are stripped",
+    );
   });
 
   it("trims output to the most recent lines", async () => {
@@ -88,6 +94,17 @@ describe("saveState and loadState round-trip", () => {
     expect(loaded[0].output.length).toBeLessThan(500);
     // Should keep the tail: last line should be "line 499"
     expect(loaded[0].output[loaded[0].output.length - 1]).toBe("line 499");
+  });
+
+  it("preserves user-authored notes across save/load", async () => {
+    const ws = makeWs({
+      notes: "Tried approach X but it failed because Y. Next: try Z.",
+    });
+    await saveState(tmpDir, "main", [ws]);
+    const loaded = await loadState(tmpDir);
+    expect(loaded[0].notes).toBe(
+      "Tried approach X but it failed because Y. Next: try Z.",
+    );
   });
 
   it("preserves persisted fields across save/load", async () => {

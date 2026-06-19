@@ -1026,6 +1026,23 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   /**
+   * Set or clear the user-authored notes on a workspace (see
+   * {@link Workspace.notes}). Persisted like any other change and survives
+   * restarts. Blank/whitespace notes clear the field. Returns false if the
+   * workspace doesn't exist or the notes didn't change.
+   */
+  setNotes(id: string, notes: string): boolean {
+    const ws = this.workspaces.get(id);
+    if (!ws) return false;
+    const trimmed = notes.trim();
+    const normalized = trimmed || undefined;
+    if (normalized === ws.notes) return false;
+    ws.notes = normalized;
+    this.touch();
+    return true;
+  }
+
+  /**
    * Create a fresh workspace from an existing one's prompt and agent — a brand
    * new worktree off the current base branch, exactly as if the user had retyped
    * the same thing into the new-workspace form. Useful for re-rolling a prompt

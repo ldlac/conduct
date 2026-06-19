@@ -307,6 +307,12 @@ export function WorkspaceList({
                   ⚠
                 </Text>
               )}
+              {ws.notes && (
+                <Text color="yellow">
+                  {" "}
+                  📝
+                </Text>
+              )}
               {ws.prUrl ? (
                 <Text color="magenta" bold>
                   {" "}
