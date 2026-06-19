@@ -98,6 +98,27 @@ function waitForNotRunning(id: string, timeoutMs = 5000): Promise<void> {
   });
 }
 
+// Resolve once the in-app runner command for `id` has finished. Unlike the
+// agent waiters, this is NOT primed with an immediate check: a command is only
+// considered done once it has both started and stopped, and runCommand marks it
+// running synchronously, so the caller invokes this right after a `true` return.
+function waitForCommandDone(id: string, timeoutMs = 10000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      manager.off("update", onUpdate);
+      reject(new Error(`Timeout waiting for command in ${id}`));
+    }, timeoutMs);
+    const onUpdate = () => {
+      if (!manager.isCommandRunning(id)) {
+        clearTimeout(timer);
+        manager.off("update", onUpdate);
+        resolve();
+      }
+    };
+    manager.on("update", onUpdate);
+  });
+}
+
 describe("WorkspaceManager integration", () => {
   it("creates a workspace with mock agent and it completes", async () => {
     const ws = await manager.createWorkspace({
@@ -359,6 +380,75 @@ describe("WorkspaceManager integration", () => {
     expect(manager.renameWorkspace(ws.id, "")).toBe(false);
     expect(manager.renameWorkspace(ws.id, "   ")).toBe(false);
   }, 15000);
+
+  it("runs a one-off command in the worktree and captures its output", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Run command test",
+      prompt: "standby",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+
+    expect(manager.runCommand(ws.id, "echo hello-from-runner")).toBe(true);
+    await waitForCommandDone(ws.id);
+
+    const after = manager.get(ws.id)!;
+    const text = (after.shellOutput ?? []).join("\n");
+    // The command line is echoed, its stdout captured, and the exit recorded —
+    // all in the separate shell buffer, never in the agent transcript.
+    expect(text).toContain("$ echo hello-from-runner");
+    expect(text).toContain("hello-from-runner");
+    expect(text).toContain("[exited 0]");
+    expect(after.shellRunning).toBe(false);
+    expect(manager.isCommandRunning(ws.id)).toBe(false);
+    expect(after.output.join("\n")).not.toContain("hello-from-runner");
+  }, 15000);
+
+  it("records a non-zero exit code from a runner command", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Failing command test",
+      prompt: "standby",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+
+    expect(manager.runCommand(ws.id, "exit 3")).toBe(true);
+    await waitForCommandDone(ws.id);
+    expect((manager.get(ws.id)!.shellOutput ?? []).join("\n")).toContain("[exited 3]");
+  }, 15000);
+
+  it("refuses a blank command and an unknown workspace", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Blank command test",
+      prompt: "standby",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    expect(manager.runCommand(ws.id, "   ")).toBe(false);
+    expect(manager.runCommand("does-not-exist", "echo hi")).toBe(false);
+  }, 15000);
+
+  it("runs only one command per workspace at a time, and stops it on request", async () => {
+    const ws = await manager.createWorkspace({
+      title: "One at a time test",
+      prompt: "standby",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+
+    expect(manager.runCommand(ws.id, "sleep 5")).toBe(true);
+    expect(manager.isCommandRunning(ws.id)).toBe(true);
+    // A second command is rejected while the first is still live.
+    expect(manager.runCommand(ws.id, "echo nope")).toBe(false);
+
+    manager.stopCommand(ws.id);
+    await waitForCommandDone(ws.id);
+    expect(manager.isCommandRunning(ws.id)).toBe(false);
+    // With the worktree free again, a fresh command runs.
+    expect(manager.runCommand(ws.id, "echo after-stop")).toBe(true);
+    await waitForCommandDone(ws.id);
+    expect((manager.get(ws.id)!.shellOutput ?? []).join("\n")).toContain("after-stop");
+  }, 20000);
 
   it("shutdown kills processes and does not throw", async () => {
     const ws = await manager.createWorkspace({

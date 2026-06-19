@@ -20,8 +20,8 @@ export interface HandlerState {
 
   mode: "list" | "detail" | "new" | "auto-improve";
   setMode: (m: "list" | "detail" | "new" | "auto-improve") => void;
-  view: "output" | "diff";
-  setView: (v: "output" | "diff") => void;
+  view: "output" | "diff" | "shell";
+  setView: (v: "output" | "diff" | "shell") => void;
   scroll: number;
   setScroll: (s: number) => void;
   followTail: boolean;
@@ -73,6 +73,7 @@ export interface HandlerState {
   diffFiles: Array<{ path: string; content: string }>;
 
   switchWorkspace: (direction: 1 | -1) => void;
+  openCommand: (ws: Workspace | undefined) => void;
   doMerge: (ws: Workspace | undefined) => void;
   doPushPr: (ws: Workspace | undefined) => void;
   doRestart: (ws: Workspace | undefined) => void;
@@ -209,7 +210,17 @@ export function useConductKeys(s: HandlerState): void {
           return;
         }
         if (input === "s") {
-          if (s.current) {
+          // In the shell view, `s` stops a running runner command (see `!`); the
+          // agent is left alone. Everywhere else it stops the agent as before.
+          if (
+            s.mode === "detail" &&
+            s.view === "shell" &&
+            s.current &&
+            s.manager.isCommandRunning(s.current.id)
+          ) {
+            s.manager.stopCommand(s.current.id);
+            s.flash("stopping command");
+          } else if (s.current) {
             s.manager.stop(s.current.id);
             s.flash(`stopping ${s.current.title}`);
           }
@@ -255,6 +266,13 @@ export function useConductKeys(s: HandlerState): void {
             const msg = s.onShell(s.current);
             if (msg) s.flash(msg);
           }
+          return;
+        }
+        // `!` runs a one-off command in the worktree from inside conduct (the
+        // in-app counterpart to `c`): opens the command box in the shell view and
+        // streams the output there, without tearing down the TUI.
+        if (input === "!") {
+          s.openCommand(s.current);
           return;
         }
         if (input === "e") {
@@ -498,7 +516,7 @@ function handleDetailMode(
   }
   if (input === "G") {
     s.setScroll(s.maxScroll);
-    if (s.view === "output") s.setFollowTail(true);
+    if (s.view === "output" || s.view === "shell") s.setFollowTail(true);
     return;
   }
   let next: number | undefined;
@@ -509,6 +527,7 @@ function handleDetailMode(
   if (next !== undefined) {
     const clamped = Math.max(0, Math.min(s.maxScroll, next));
     s.setScroll(clamped);
-    if (s.view === "output") s.setFollowTail(clamped >= s.maxScroll);
+    if (s.view === "output" || s.view === "shell")
+      s.setFollowTail(clamped >= s.maxScroll);
   }
 }

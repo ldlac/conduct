@@ -127,6 +127,22 @@ export interface Workspace {
   /** Rolling buffer of agent output lines (most recent last). */
   output: string[];
   /**
+   * Rolling buffer of output from one-off shell commands run in this worktree
+   * via the in-app command runner (the `!` key), kept separate from the agent
+   * transcript so the two streams never interleave. The in-app counterpart to
+   * jumping into a full shell with `c`: a quick `pnpm test` / `git status` / `ls`
+   * against the worktree without leaving conduct. In-memory only — not persisted,
+   * since it's transient session diagnostics rather than reviewable agent work.
+   */
+  shellOutput?: string[];
+  /**
+   * True while a command launched by the in-app runner is still executing in
+   * this worktree. Drives the running indicator in the shell view and gates a
+   * second concurrent command (one at a time per workspace, so output stays
+   * legible). Transient — never true for a workspace restored from disk.
+   */
+  shellRunning?: boolean;
+  /**
    * Last-known size of the worktree's diff against the base branch. Refreshed
    * when a turn ends and when the diff is viewed (not while the agent is
    * actively working), so it reflects the most recent settled state. Undefined

@@ -55,10 +55,18 @@ function serialize(
   workspaces: Workspace[],
   savedAt: number,
 ): string {
-  const trimmed = workspaces.map((ws) => ({
-    ...ws,
-    output: ws.output.slice(-PERSIST_OUTPUT_LINES),
-  }));
+  const trimmed = workspaces.map((ws) => {
+    // shellOutput / shellRunning are transient runner state (see runCommand):
+    // session-scoped command output and a live-process flag, neither meaningful
+    // after a restart — drop them rather than bloat the state file.
+    const copy: Workspace = {
+      ...ws,
+      output: ws.output.slice(-PERSIST_OUTPUT_LINES),
+    };
+    delete copy.shellOutput;
+    delete copy.shellRunning;
+    return copy;
+  });
   const state: PersistedState = {
     version: STATE_VERSION,
     baseBranch,
