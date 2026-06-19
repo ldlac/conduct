@@ -237,6 +237,14 @@ export interface Workspace {
    */
   runStartedAt?: number;
   /**
+   * Total wall-clock time the agent has spent working across all turns, in
+   * milliseconds. Accumulated each time a turn ends or the process exits, by
+   * adding the delta between the last `runStartedAt` and the current time.
+   * Survives restarts so the total is always visible even after the process
+   * is gone.
+   */
+  totalDurationMs?: number;
+  /**
    * The remote the workspace's branch was last pushed to (see
    * {@link manager.WorkspaceManager.push}), e.g. "origin". Set on a successful
    * push and persisted, so the UI can flag a workspace whose work has left the

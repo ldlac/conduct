@@ -145,6 +145,8 @@ describe("WorkspaceManager integration", () => {
     // Should have written a file (the mock agent writes CONDUCT_NOTES.md)
     expect(updated!.stat).toBeDefined();
     expect(updated!.stat!.files).toBeGreaterThanOrEqual(1);
+    // Total duration should have been accumulated (the mock ran for some ms).
+    expect(updated!.totalDurationMs).toBeGreaterThan(0);
   }, 15000);
 
   it("stops a running workspace", async () => {
@@ -901,4 +903,23 @@ describe("WorkspaceManager — worktree setup commands", () => {
       mgr.shutdown();
     }
   }, 20000);
+
+  it("exports a workspace to a markdown file", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Export test",
+      prompt: "Add a simple test file",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    await new Promise((r) => setTimeout(r, 200));
+
+    const filePath = await manager.exportWorkspace(ws.id);
+
+    expect(filePath).toBeTruthy();
+    expect(filePath).toMatch(/export-test.*\.md$/);
+    const content = fs.readFileSync(filePath, "utf8");
+    expect(content).toContain("# Workspace: Export test");
+    expect(content).toContain("## Output");
+    expect(content).toContain("## Diff");
+  }, 15000);
 });

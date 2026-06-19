@@ -20,11 +20,13 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "Space", description: "toggle mark for batch operations", category: "list" },
   { keys: "i", description: "broadcast a message to all marked agents", category: "list" },
   { keys: "Esc", description: "clear all marks (when any are set)", category: "list" },
+  { keys: "Ctrl+f", description: "search outputs across all workspaces", category: "list" },
   { keys: "Ctrl+a", description: "mark all workspaces", category: "list" },
 
   // Actions on selected workspace
   { keys: "e", description: "rename the workspace title", category: "actions" },
   { keys: "C", description: "clone — re-run this prompt in a fresh worktree", category: "actions" },
+  { keys: "E", description: "export workspace logs (output, diff & metadata to a markdown file)", category: "actions" },
   { keys: "w", description: "pick winner — keep this attempt, archive the rest of its fan-out", category: "actions" },
 
   { keys: "c", description: "jump into a shell in the worktree", category: "actions" },
@@ -77,7 +79,7 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · C clone · w winner · v compare · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · ^f search outputs · e rename · C clone · w winner · v compare · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · a notes · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",

@@ -33,6 +33,12 @@ interface Props {
   searching?: boolean;
   /** The live search query text. */
   searchQuery?: string;
+  /** When true, the user is typing a cross-workspace search query. */
+  globalSearching?: boolean;
+  /** The live cross-workspace search query text. */
+  globalSearchQuery?: string;
+  /** The applied cross-workspace search query. */
+  globalSearch?: string;
 }
 
 export function StatusBar({
@@ -51,6 +57,9 @@ export function StatusBar({
   markedCount,
   searching,
   searchQuery,
+  globalSearching,
+  globalSearchQuery,
+  globalSearch,
 }: Props) {
   const tally = usageText(usage);
   // Every branch below is a single logical line, but some carry variable-length
@@ -66,6 +75,13 @@ export function StatusBar({
           {searchQuery}
           <Text color="cyan">▏</Text>
           <Text dimColor> (↵ find · esc cancel)</Text>
+        </Text>
+      ) : globalSearching ? (
+        <Text wrap="truncate">
+          <Text color="green">search all: </Text>
+          {globalSearchQuery}
+          <Text color="green">▏</Text>
+          <Text dimColor> (↵ search · esc cancel)</Text>
         </Text>
       ) : renaming ? (
         <Text wrap="truncate">
@@ -98,6 +114,9 @@ export function StatusBar({
         <Text dimColor wrap="truncate">
           {repo} @ {baseBranch}
           {filter && <Text color="cyan"> · /{filter}</Text>}
+          {globalSearch && !globalSearching ? (
+            <Text color="green"> · 🔍{globalSearch}</Text>
+          ) : null}
           {tally && ` · session: ${tally}`}
         </Text>
       )}
