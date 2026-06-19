@@ -12,7 +12,7 @@ import {
 
 interface Props {
   ws: Workspace | undefined;
-  view: "output" | "diff";
+  view: "output" | "diff" | "shell";
   diff: string;
   scroll: number;
   width: number;
@@ -27,6 +27,10 @@ interface Props {
    * workspaces rather than a reply to the selected one; the box relabels itself
    * so it's clear the message goes to the whole fleet. */
   broadcastCount?: number;
+  /** When true, the open input box is composing a one-off command for the
+   * in-app runner (the `!` key) rather than a reply to the agent, so it relabels
+   * itself and its submit runs the command instead of sending a message. */
+  commandMode?: boolean;
   reply: string;
   onReplyChange: (v: string) => void;
   onReplySubmit: () => void;
@@ -187,6 +191,7 @@ export function DetailPane({
   followTail,
   composing,
   broadcastCount,
+  commandMode,
   reply,
   onReplyChange,
   onReplySubmit,
@@ -221,9 +226,13 @@ export function DetailPane({
       ? diff
         ? diff.split("\n")
         : ["(no changes yet)"]
-      : ws.output.length
-        ? ws.output
-        : ["(no output yet)"];
+      : view === "shell"
+        ? ws.shellOutput && ws.shellOutput.length
+          ? ws.shellOutput
+          : ["(no command output yet — press ! to run a command in the worktree)"]
+        : ws.output.length
+          ? ws.output
+          : ["(no output yet)"];
   // Wrap each logical line into display rows so nothing is lost to truncation.
   // Scroll, slicing and the position indicator all work in display rows, and
   // the App computes its scroll bounds against the same wrapped count.
@@ -324,7 +333,15 @@ export function DetailPane({
         ) : null}
       </Text>
       <Text dimColor wrap="truncate-end">
-        {view === "diff" ? "— diff —" : followTail ? "— output —" : "— output (paused) —"}
+        {view === "diff"
+          ? "— diff —"
+          : view === "shell"
+            ? ws.shellRunning
+              ? "— shell (running…) —"
+              : "— shell —"
+            : followTail
+              ? "— output —"
+              : "— output (paused) —"}
         {diffFilePath && diffFileCount && diffFileCount > 1 ? (
           <Text>
             {" "}[{diffFileIndex != null ? diffFileIndex + 1 : 1}/{diffFileCount}]{" "}
@@ -362,17 +379,19 @@ export function DetailPane({
       </Box>
       {composing && (
         <Box>
-          <Text color={broadcastCount ? "magenta" : "green"}>
-            {broadcastCount ? "📣 " : "❯ "}
+          <Text color={commandMode ? "cyan" : broadcastCount ? "magenta" : "green"}>
+            {commandMode ? "$ " : broadcastCount ? "📣 " : "❯ "}
           </Text>
           <TextInput
             value={reply}
             onChange={onReplyChange}
             onSubmit={onReplySubmit}
             placeholder={
-              broadcastCount
-                ? `broadcast to ${broadcastCount} marked agent${broadcastCount === 1 ? "" : "s"} (Enter send · Esc cancel)`
-                : "reply to the agent (Enter send · Esc cancel)"
+              commandMode
+                ? "run a command in the worktree (Enter run · Esc cancel)"
+                : broadcastCount
+                  ? `broadcast to ${broadcastCount} marked agent${broadcastCount === 1 ? "" : "s"} (Enter send · Esc cancel)`
+                  : "reply to the agent (Enter send · Esc cancel)"
             }
           />
         </Box>

@@ -62,6 +62,22 @@ describe("saveState and loadState round-trip", () => {
     expect(loaded[1].title).toBe("Second");
   });
 
+  it("drops transient runner state (shellOutput / shellRunning)", async () => {
+    const ws = makeWs({
+      shellOutput: ["$ pnpm test", "ok", "[exited 0]"],
+      shellRunning: true,
+    });
+    await saveState(tmpDir, "main", [ws]);
+
+    const loaded = await loadState(tmpDir);
+    // Command output and the live-process flag are session-only — neither
+    // should survive to the next launch (see store.ts / runCommand).
+    expect(loaded[0].shellOutput).toBeUndefined();
+    expect(loaded[0].shellRunning).toBeUndefined();
+    // The agent transcript is unaffected.
+    expect(loaded[0].output).toEqual(["line1", "line2", "line3"]);
+  });
+
   it("trims output to the most recent lines", async () => {
     const long = makeWs({
       output: Array.from({ length: 500 }, (_, i) => `line ${i}`),

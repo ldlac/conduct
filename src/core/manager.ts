@@ -106,6 +106,13 @@ function firstUrl(text: string): string | undefined {
 export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, Workspace>();
   private procs = new Map<string, ChildProcess>();
+  /**
+   * Live processes for one-off commands launched via the in-app runner (see
+   * {@link runCommand}), keyed by workspace id. Kept separate from {@link procs}
+   * (the agent processes) so a runner command and the agent can be alive at once
+   * without either clobbering the other's lifecycle.
+   */
+  private shellProcs = new Map<string, ChildProcess>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** Pending coalesced `update` emission; see {@link UPDATE_THROTTLE_MS}. */
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -263,6 +270,21 @@ export class WorkspaceManager extends EventEmitter {
     for (const line of text.split("\n")) ws.output.push(line);
     if (ws.output.length > MAX_OUTPUT_LINES) {
       ws.output.splice(0, ws.output.length - MAX_OUTPUT_LINES);
+    }
+    this.touch();
+  }
+
+  /**
+   * Append to the workspace's separate command-output buffer (see
+   * {@link Workspace.shellOutput}). Mirrors {@link append} but writes the
+   * in-app runner's stream instead of the agent transcript, so command output
+   * and agent output never interleave in the UI.
+   */
+  private appendShell(ws: Workspace, text: string): void {
+    if (!ws.shellOutput) ws.shellOutput = [];
+    for (const line of text.split("\n")) ws.shellOutput.push(line);
+    if (ws.shellOutput.length > MAX_OUTPUT_LINES) {
+      ws.shellOutput.splice(0, ws.shellOutput.length - MAX_OUTPUT_LINES);
     }
     this.touch();
   }
@@ -677,6 +699,104 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   /**
+   * Run a one-off shell command in a workspace's worktree and stream its output
+   * into the workspace's separate command buffer (see {@link Workspace.shellOutput}).
+   * This is the in-app counterpart to jumping into a full interactive shell with
+   * `c`: a quick `pnpm test` / `git status` / `ls` against the worktree without
+   * leaving conduct or tearing down the TUI. The command runs through the user's
+   * shell with `-c` (so pipes, globs, and `&&` work and the inherited PATH/env
+   * apply) with the worktree as its cwd and `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE`
+   * exported, exactly like the interactive shell.
+   *
+   * Only one runner command runs per workspace at a time, so its output stays
+   * legible and isn't interleaved with another's; a second call while one is
+   * live is rejected. Returns false when the worktree is missing, the command is
+   * blank, or one is already running here. The agent process (if any) is
+   * untouched — the two run side by side.
+   */
+  runCommand(id: string, command: string): boolean {
+    const ws = this.workspaces.get(id);
+    const trimmed = command.trim();
+    if (!ws?.path || !trimmed) return false;
+    if (this.shellProcs.has(id)) return false;
+
+    const shell = process.env.SHELL || "/bin/bash";
+    this.appendShell(ws, `$ ${trimmed}`);
+    ws.shellRunning = true;
+    this.touch();
+
+    let child: ChildProcess;
+    try {
+      child = spawn(shell, ["-c", trimmed], {
+        cwd: ws.path,
+        env: {
+          ...process.env,
+          CONDUCT_WORKSPACE: ws.title,
+          CONDUCT_WORKTREE: ws.path,
+        },
+        // No stdin: the runner is for non-interactive one-shot commands. A
+        // command that blocks waiting on stdin (e.g. a bare `cat`) sees EOF and
+        // returns rather than hanging the buffer forever.
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      this.appendShell(
+        ws,
+        `⚠ failed to start: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      ws.shellRunning = false;
+      this.touch();
+      return false;
+    }
+
+    this.shellProcs.set(id, child);
+
+    const rls: readline.Interface[] = [];
+    if (child.stdout) {
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on("line", (l) => this.appendShell(ws, l));
+      rls.push(rl);
+    }
+    if (child.stderr) {
+      const rl = readline.createInterface({ input: child.stderr });
+      rl.on("line", (l) => this.appendShell(ws, l));
+      rls.push(rl);
+    }
+    const closeRl = () => {
+      for (const rl of rls) rl.close();
+    };
+    child.on("error", (err) => {
+      closeRl();
+      this.appendShell(ws, `⚠ ${err.message}`);
+      ws.shellRunning = false;
+      this.shellProcs.delete(id);
+      this.touch();
+    });
+    child.on("close", (code) => {
+      closeRl();
+      this.appendShell(ws, `[exited ${code ?? 0}]`);
+      ws.shellRunning = false;
+      this.shellProcs.delete(id);
+      // A command can change the worktree (build artifacts, a `git` op), so the
+      // diff badge may now be stale — refresh it the same way an agent turn end
+      // does. Best-effort; never blocks the command's completion.
+      void this.refreshStat(ws);
+    });
+    return true;
+  }
+
+  /** Whether a runner command (see {@link runCommand}) is live in this workspace. */
+  isCommandRunning(id: string): boolean {
+    return this.shellProcs.has(id);
+  }
+
+  /** Stop a running runner command (see {@link runCommand}); a no-op if none is live. */
+  stopCommand(id: string): void {
+    const child = this.shellProcs.get(id);
+    if (child) child.kill("SIGTERM");
+  }
+
+  /**
    * Re-run the agent in an existing workspace's worktree. Useful for resuming a
    * workspace left `stopped` by a previous session, or retrying one that ended
    * `done`/`error`. The worktree is reused as-is (any prior changes remain), so
@@ -873,6 +993,9 @@ export class WorkspaceManager extends EventEmitter {
     const ws = this.workspaces.get(id);
     if (!ws) return;
     this.stop(id);
+    // A runner command holds the worktree open too; kill it before the worktree
+    // is removed out from under it.
+    this.stopCommand(id);
     try {
       if (ws.path) await this.git.removeWorktree(ws.path);
     } catch {
@@ -885,12 +1008,16 @@ export class WorkspaceManager extends EventEmitter {
     }
     this.workspaces.delete(id);
     this.procs.delete(id);
+    this.shellProcs.delete(id);
     this.touch();
   }
 
   /** Kill every running agent and flush state synchronously (used on quit). */
   shutdown(): void {
     for (const child of this.procs.values()) child.kill("SIGTERM");
+    // Runner commands (see runCommand) are children too; don't leave a stray
+    // `pnpm test` running after the TUI quits.
+    for (const child of this.shellProcs.values()) child.kill("SIGTERM");
     this.cancelSave();
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);

@@ -174,6 +174,7 @@ pnpm start ../my-repo   # or point at another repo
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |
 | `c`                | jump into a shell in the workspace's worktree  |
+| `!`                | run a one-off command in the worktree (output streams in the shell view) |
 | `m`                | merge (selected, or all marked when marks exist) |
 | `P`                | push the branch and open a pull request (`gh`) |
 | `s`                | stop the running agent                         |
@@ -196,6 +197,7 @@ pnpm start ../my-repo   # or point at another repo
 | `n` / `N` (`p`)    | next / previous search match      |
 | `i`                | reply to the agent; opens an option picker for a multiple-choice question |
 | `c`                | shell in the worktree             |
+| `!`                | run a command in the worktree (shell view) · `s` stops it |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
 | `P`                | push the branch and open a pull request (`gh`) |
@@ -268,10 +270,29 @@ How it opens depends on your environment:
   agents keep streaming and a dev server you start in the worktree can run
   alongside the TUI. Switch back with your normal tmux keys.
 - **Otherwise**: `conduct` suspends the TUI and drops you into an interactive
-  shell (`$SHELL`, falling back to `/bin/bash`) in this terminal. Type `exit`
-  (or Ctrl-D) to return to exactly where you were.
+  shell (`$SHELL`, falling back to the first of `/bin/bash`, `/bin/zsh`,
+  `fish`, `/bin/sh` that exists) in this terminal. It clears the screen so the
+  shell starts clean, and clears it again on the way back, so you return to
+  exactly where you were rather than to the shell stacked under the old frame.
+  Type `exit` (or Ctrl-D) to return.
 
 Archived workspaces have no worktree to enter, so `c` is a no-op there.
+
+### Running one-off commands without leaving conduct
+
+For a quick command against a worktree — `pnpm test`, `git status`, `ls` — you
+don't need a full shell. Press `!` (from the list or detail) to open a command
+box; type the command and press `↵`. conduct runs it in the worktree (through
+your `$SHELL` with `-c`, so pipes, globs, and `&&` work, with `CONDUCT_WORKSPACE`
+and `CONDUCT_WORKTREE` exported), and its output streams live into the **shell
+view** of the detail pane — kept separate from the agent's transcript so the two
+never tangle. The TUI keeps running the whole time; your agents keep streaming.
+
+One command runs per workspace at a time. While it runs, the header reads
+`— shell (running…) —`; press `s` to stop it. Scroll/search the output like any
+other view (`↑`/`↓`, `g`/`G`, `/`). Command output is session-only — it isn't
+persisted across restarts. For an interactive program (a REPL, `vim`, a dev
+server you want to keep), use `c` to open a real shell instead.
 
 ## Agent flags
 

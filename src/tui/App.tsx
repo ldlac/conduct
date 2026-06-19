@@ -25,7 +25,7 @@ import type { AutoImproveFocus } from "../core/prompt.js";
 import { useConductKeys } from "./useConductKeys.js";
 
 type Mode = "list" | "detail" | "new" | "auto-improve";
-type View = "output" | "diff";
+type View = "output" | "diff" | "shell";
 
 // One-line note shown (and bell rung) when a workspace newly needs attention.
 const ATTENTION_LABEL: Record<AttentionReason, string> = {
@@ -92,6 +92,12 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // selected one. Reuses the same compose box and `reply` buffer as a single
   // reply; this flag only changes where the message goes on submit.
   const [broadcasting, setBroadcasting] = useState(false);
+  // When true, the open compose box (reused from the reply box, like broadcast)
+  // is entering a one-off command for the in-app runner rather than a reply.
+  // On submit the typed text is run in the worktree via manager.runCommand and
+  // its output streams into the shell view; this flag only changes the box's
+  // label and where the submit goes.
+  const [commandMode, setCommandMode] = useState(false);
   // Search within the current detail view (output or diff). Typing `/` in detail
   // mode opens a search box; Enter commits, Esc clears. `n`/`N` cycle matches.
   const [searching, setSearching] = useState(false);
@@ -244,7 +250,12 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   const searchResults: number[] = useMemo(() => {
     if (!searchQuery || !current) return [];
     const q = searchQuery.toLowerCase();
-    const lines = view === "diff" ? (currentDiff || "").split("\n") : current.output;
+    const lines =
+      view === "diff"
+        ? (currentDiff || "").split("\n")
+        : view === "shell"
+          ? current.shellOutput ?? []
+          : current.output;
     const matches: number[] = [];
     let row = 0;
     for (const l of lines) {
@@ -267,13 +278,22 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       ? currentDiff
         ? currentDiff.split("\n")
         : ["(no changes yet)"]
-      : current?.output.length
-        ? current.output
-        : ["(no output yet)"];
+      : view === "shell"
+        ? current?.shellOutput?.length
+          ? current.shellOutput
+          : ["(no command output yet)"]
+        : current?.output.length
+          ? current.output
+          : ["(no output yet)"];
   const totalLines = wrappedRowCount(sourceLines, textWidth);
   const maxScroll = Math.max(0, totalLines - viewportRows);
-  // While following, the conceptual top is the bottom of the buffer.
-  const topNow = view === "output" && followTail ? maxScroll : Math.min(scroll, maxScroll);
+  // While following, the conceptual top is the bottom of the buffer. Both the
+  // live agent output and the streaming command output (shell view) tail by
+  // default; the diff view is static and never auto-scrolls.
+  const topNow =
+    (view === "output" || view === "shell") && followTail
+      ? maxScroll
+      : Math.min(scroll, maxScroll);
 
   const flash = useCallback((msg: string) => {
     setMessage(msg);
@@ -401,6 +421,50 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       );
     },
     [manager, markedIds, clearMarks, flash],
+  );
+
+  // Open the in-app command box for a workspace: switch to the shell view and
+  // reuse the compose box in command mode (see commandMode). The runner needs a
+  // worktree on disk, so the same guards as the interactive shell (`c`) apply.
+  const openCommand = useCallback(
+    (ws: Workspace | undefined) => {
+      if (!ws?.path) {
+        flash("no worktree to run commands in yet");
+        return;
+      }
+      if (ws.status === "archived") {
+        flash("worktree was removed (archived)");
+        return;
+      }
+      setSelectedId(ws.id);
+      setMode("detail");
+      setView("shell");
+      setReply("");
+      setBroadcasting(false);
+      setCommandMode(true);
+      setComposing(true);
+    },
+    [flash],
+  );
+
+  const doRunCommand = useCallback(
+    (ws: Workspace | undefined, text: string) => {
+      // Close the box first so a slow flash never leaves it open; keep the shell
+      // view so the streaming output is visible right away.
+      setComposing(false);
+      setCommandMode(false);
+      setReply("");
+      const trimmed = text.trim();
+      if (!ws || !trimmed) return;
+      if (!manager.runCommand(ws.id, trimmed)) {
+        flash(
+          manager.isCommandRunning(ws.id)
+            ? "a command is already running here — wait or stop it (s)"
+            : "couldn't run command (no worktree?)",
+        );
+      }
+    },
+    [manager, flash],
   );
 
   const doClone = useCallback(
@@ -657,7 +721,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     current, ordered, selectedIndex,
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
-    switchWorkspace,
+    switchWorkspace, openCommand,
     doMerge, doPushPr, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove,
     doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
@@ -787,14 +851,20 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           followTail={followTail}
           composing={composing}
           broadcastCount={broadcasting ? markedIds.length : 0}
+          commandMode={commandMode}
           reply={reply}
           onReplyChange={setReply}
           onReplySubmit={() =>
-            broadcasting ? doBroadcast(reply) : sendReply(current, reply)
+            commandMode
+              ? doRunCommand(current, reply)
+              : broadcasting
+                ? doBroadcast(reply)
+                : sendReply(current, reply)
           }
           onReplyCancel={() => {
             setComposing(false);
             setBroadcasting(false);
+            setCommandMode(false);
             setReply("");
           }}
           diffFilePath={diffFiles[diffFileIndex]?.path}

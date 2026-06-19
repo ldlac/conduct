@@ -1,6 +1,6 @@
 import React from "react";
 import path from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { render } from "ink";
@@ -20,6 +20,20 @@ function shellEnv(ws: Workspace): NodeJS.ProcessEnv {
   };
 }
 
+// Pick the shell to launch. We prefer the user's $SHELL, but it can be unset
+// (some minimal/login environments) or point at a binary that isn't actually
+// on this machine — spawning a missing shell is exactly the kind of failure
+// that made the old handoff "just die." Fall back to the first common shell
+// that exists, and only as a last resort to a bare "/bin/sh" name.
+function pickShell(): string {
+  const preferred = process.env.SHELL;
+  if (preferred && existsSync(preferred)) return preferred;
+  for (const candidate of ["/bin/bash", "/bin/zsh", "/usr/bin/fish", "/bin/sh"]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return preferred || "/bin/sh";
+}
+
 // Preferred path when we're already running inside tmux: open the worktree
 // shell in a brand-new tmux window instead of seizing our own terminal. conduct
 // keeps running untouched in its original window (agents keep streaming), and
@@ -33,7 +47,7 @@ function openInTmux(ws: Workspace): boolean {
   const name = (ws.title || "worktree").replace(/[^\w.-]/g, "-").slice(0, 40);
   const res = spawnSync(
     "tmux",
-    ["new-window", "-c", ws.path, "-n", name, process.env.SHELL || "/bin/bash"],
+    ["new-window", "-c", ws.path, "-n", name, pickShell()],
     { stdio: "ignore" },
   );
   return res.status === 0;
@@ -54,7 +68,7 @@ function openInTmux(ws: Workspace): boolean {
 // stdin before spawning; the fresh render() in main() re-arms everything after.
 function runShell(ws: Workspace): Promise<void> {
   return new Promise((resolve) => {
-    const shell = process.env.SHELL || "/bin/bash";
+    const shell = pickShell();
     const stdin = process.stdin;
     try {
       if (stdin.isTTY) stdin.setRawMode(false);
@@ -65,18 +79,32 @@ function runShell(ws: Workspace): Promise<void> {
     stdin.removeAllListeners("readable");
     stdin.pause();
 
+    // Hand the shell a clean screen and a visible cursor. Without this the shell
+    // prompt paints below the last (now-frozen) TUI frame — the user sees the
+    // dashboard sitting above their shell, which reads as "it didn't work." Ink
+    // also hides the cursor while mounted (`\x1b[?25l`); show it again so the
+    // shell's own cursor is visible. `\x1b[2J` clears the screen, `\x1b[H` homes
+    // the cursor, `\x1b[?25h` shows it.
+    process.stdout.write("\x1b[2J\x1b[H\x1b[?25h");
     process.stdout.write(
-      `\nconduct: shell in ${ws.path}\n(exit or Ctrl-D to return)\n\n`,
+      `conduct: shell in ${ws.path}\n(exit or Ctrl-D to return)\n\n`,
     );
+    const done = () => {
+      // Clear again on the way out so the re-rendered TUI starts from a clean
+      // screen instead of stacking beneath the shell's scrollback. `\x1b[3J`
+      // also drops the scrollback so a scroll-up doesn't reveal the old session.
+      process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+      resolve();
+    };
     const child = spawn(shell, [], {
       stdio: "inherit",
       cwd: ws.path,
       env: shellEnv(ws),
     });
-    child.on("exit", () => resolve());
+    child.on("exit", done);
     child.on("error", (err) => {
       process.stderr.write(`conduct: shell failed: ${err.message}\n`);
-      resolve();
+      done();
     });
   });
 }
