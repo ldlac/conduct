@@ -282,6 +282,14 @@ describe("commandExists", () => {
   it("resolves false for a bogus binary", async () => {
     expect(await commandExists("definitely-not-a-real-binary-zzz-12345")).toBe(false);
   });
+
+  it("uses the platform's PATH finder (where on win32, which elsewhere)", async () => {
+    // The finder is selected from process.platform; assert it resolves a known
+    // binary on whatever platform the test runs on, so the win32 `where` branch
+    // doesn't silently regress to an unconditional `which` (absent on Windows).
+    const known = process.platform === "win32" ? "cmd" : "git";
+    expect(await commandExists(known)).toBe(true);
+  });
 });
 
 describe("Git remote and push", () => {
