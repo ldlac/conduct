@@ -379,10 +379,15 @@ src/
 ## Merging and conflicts
 
 `m` auto-commits any pending work and runs `git merge --no-ff` into the base
-branch. If the merge conflicts, conduct rolls it straight back (`git merge
---abort`) so your base checkout is never left stranded mid-merge, flags the
-workspace with a red `⚠`, and lists the conflicting files in the detail pane.
-Resolve them by jumping into the worktree (`c`), then press `m` again to retry.
+branch. The commit (and the merge-commit subject) is built from the agent's own
+closing summary of the turn, as a conventional-commit message
+(`feat: …`, `fix: …`, etc.) describing what the work actually did, rather than
+the short workspace title. When the agent surfaces no summary (some backends
+don't), it falls back to the title. If the merge conflicts, conduct rolls it
+straight back (`git merge --abort`) so your base checkout is never left stranded
+mid-merge, flags the workspace with a red `⚠`, and lists the conflicting files
+in the detail pane. Resolve them by jumping into the worktree (`c`), then press
+`m` again to retry.
 
 ## Pushing and pull requests
 

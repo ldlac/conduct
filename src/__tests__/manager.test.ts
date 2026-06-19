@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { cloneTitle, formatQuestionAnswer, sumUsage } from "../core/manager.js";
+import {
+  buildCommitMessage,
+  classifyCommitType,
+  cloneTitle,
+  commitSubject,
+  formatQuestionAnswer,
+  sumUsage,
+} from "../core/manager.js";
 import type { AgentQuestion, TokenUsage, Workspace } from "../core/types.js";
 
 describe("formatQuestionAnswer", () => {
@@ -154,5 +161,89 @@ describe("sumUsage", () => {
     expect(total).toBeDefined();
     expect(total!.inputTokens).toBe(0);
     expect(total!.costUsd).toBe(0);
+  });
+});
+
+describe("classifyCommitType", () => {
+  it("detects each type from its keywords", () => {
+    expect(classifyCommitType("Fixed a crash on startup")).toBe("fix");
+    expect(classifyCommitType("Added a dark mode toggle")).toBe("feat");
+    expect(classifyCommitType("Updated the README")).toBe("docs");
+    expect(classifyCommitType("Tested the parser edge cases")).toBe("test");
+    expect(classifyCommitType("Optimized the hot loop")).toBe("perf");
+    expect(classifyCommitType("Refactored the auth module")).toBe("refactor");
+  });
+
+  it("falls back to chore when nothing matches", () => {
+    expect(classifyCommitType("Bumped the dependency lockfile")).toBe("chore");
+  });
+
+  it("picks the type whose keyword appears earliest", () => {
+    // "Added" leads, so it's a feature even though it also fixes something.
+    expect(classifyCommitType("Added a guard that fixes the overflow")).toBe(
+      "feat",
+    );
+    // "Fixed" leads here.
+    expect(classifyCommitType("Fixed the overflow by adding a guard")).toBe(
+      "fix",
+    );
+  });
+});
+
+describe("buildCommitMessage", () => {
+  it("falls back to a chore subject from the title when there is no summary", () => {
+    expect(buildCommitMessage("Tweak config")).toBe("chore: tweak config");
+    expect(buildCommitMessage("Fix login bug")).toBe("fix: login bug");
+  });
+
+  it("builds a conventional subject from a one-line summary", () => {
+    expect(buildCommitMessage("anything", "Added a commit message feature")).toBe(
+      "feat: a commit message feature",
+    );
+  });
+
+  it("strips conversational lead-ins and trailing punctuation", () => {
+    expect(
+      buildCommitMessage("t", "I've added a retry to the uploader."),
+    ).toBe("feat: a retry to the uploader");
+  });
+
+  it("keeps the rest of a multi-line summary as the body", () => {
+    const msg = buildCommitMessage(
+      "t",
+      "Fixed the race in the scheduler\n\nThe lock was released too early.",
+    );
+    expect(msg).toBe(
+      "fix: the race in the scheduler\n\nThe lock was released too early.",
+    );
+  });
+
+  it("respects a summary that already starts with a conventional subject", () => {
+    expect(buildCommitMessage("t", "feat(api): add pagination")).toBe(
+      "feat(api): add pagination",
+    );
+  });
+
+  it("caps the subject and preserves the full summary in the body when shortened", () => {
+    const long =
+      "Added an extremely long and exhaustively detailed description of the change that runs well past the conventional subject length limit";
+    const msg = buildCommitMessage("t", long);
+    const [subject, , ...bodyLines] = msg.split("\n");
+    expect(subject.length).toBeLessThanOrEqual(72);
+    expect(subject.startsWith("feat: ")).toBe(true);
+    // Nothing is lost: the whole summary survives in the body.
+    expect(bodyLines.join("\n")).toBe(long);
+  });
+
+  it("replaces dashes so no em/en dash reaches the message", () => {
+    const msg = buildCommitMessage("t", "Added retries — with backoff");
+    expect(msg).not.toMatch(/[—–]/);
+    expect(msg).toBe("feat: retries, with backoff");
+  });
+
+  it("commitSubject returns just the first line", () => {
+    expect(
+      commitSubject("t", "Fixed the race\n\nlong body here"),
+    ).toBe("fix: the race");
   });
 });

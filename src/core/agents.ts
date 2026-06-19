@@ -318,6 +318,16 @@ const claude: AgentBackend = {
       costUsd: num(evt.total_cost_usd),
     };
   },
+  parseSummary(line) {
+    // The turn-ending `result` event carries the agent's final message in its
+    // `result` field — its own description of what the turn did, which is the
+    // natural basis for a commit message (see Workspace.summary). Same event
+    // that turnEnded/parseUsage key off; we just read a different field.
+    const evt = parseClaudeEvent(line);
+    if (!evt || evt.type !== "result") return null;
+    const text = typeof evt.result === "string" ? evt.result.trim() : "";
+    return text || null;
+  },
   parseLine(line) {
     const evt = parseClaudeEvent(line);
     if (!evt) return line.trim() || null;

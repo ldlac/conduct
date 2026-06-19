@@ -194,6 +194,18 @@ export interface Workspace {
    */
   usage?: TokenUsage;
   /**
+   * The agent's final summary from its most recently completed turn — the
+   * closing message it produced as the turn ended (Claude Code's `result` text;
+   * see {@link AgentBackend.parseSummary}). Captured per turn and overwritten by
+   * each later one, so it always reflects the latest description of the work.
+   * Used to compose a commit/merge message that describes what the agent
+   * actually did rather than the short workspace title (see
+   * {@link manager.buildCommitMessage}). Undefined for agents that don't surface
+   * a summary, in which case the message falls back to the title. Persisted, so
+   * the message survives a restart even though the live process does not.
+   */
+  summary?: string;
+  /**
    * Paths that conflicted the last time a merge of this workspace was attempted
    * (see {@link manager.WorkspaceManager.merge}). The merge is rolled back on
    * conflict, so the base branch is untouched and the workspace stays
@@ -331,6 +343,17 @@ export interface AgentBackend {
    * numbers cumulative rather than per-turn.
    */
   parseUsage?(line: string): TokenUsage | null;
+  /**
+   * For agents that emit a closing summary at the end of a turn: extract that
+   * summary from this raw stdout line, or null if the line carries none. Claude
+   * Code carries it as the `result` field on the turn-ending `result` event —
+   * the agent's own description of what it just did. The manager keeps the most
+   * recent non-null summary on {@link Workspace.summary} and uses it to compose
+   * a commit/merge message describing the actual work instead of the short
+   * workspace title (see {@link manager.buildCommitMessage}). Agents that don't
+   * produce a summary leave this undefined and fall back to the title.
+   */
+  parseSummary?(line: string): string | null;
   /**
    * For interactive agents: does this raw stdout line end a turn with the agent
    * waiting on the user — i.e. it asked a question and now needs a reply to
