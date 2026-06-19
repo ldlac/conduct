@@ -120,6 +120,18 @@ export interface Workspace {
   title: string;
   prompt: string;
   agentId: string;
+  /**
+   * Identifier shared by every workspace spun up together in one fan-out (see
+   * {@link manager.WorkspaceManager.createWorkspaces}) — the `Fix login (1/3)`,
+   * `(2/3)`, `(3/3)` attempts of a single prompt all carry the same value.
+   * Undefined for a workspace created on its own (count of 1) or cloned after the
+   * fact, which belong to no race. It's what lets conduct tell which attempts are
+   * siblings so that, after merging the best one, the rest of *that* race can be
+   * discarded in one step without the user hunting them down (see
+   * {@link manager.WorkspaceManager.groupSiblings}). Persisted, so the grouping
+   * survives a restart.
+   */
+  groupId?: string;
   branch: string;
   /** Absolute path to the worktree checkout. Empty until created. */
   path: string;

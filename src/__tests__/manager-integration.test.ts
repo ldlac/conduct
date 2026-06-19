@@ -305,12 +305,70 @@ describe("WorkspaceManager integration", () => {
     const ids = workspaces.map((w) => w.id);
     expect(new Set(ids).size).toBe(3);
 
+    // Every attempt of one fan-out shares a single non-empty group id.
+    const groups = new Set(workspaces.map((w) => w.groupId));
+    expect(groups.size).toBe(1);
+    expect([...groups][0]).toBeTruthy();
+
     for (const ws of workspaces) {
       await waitForStatus(ws.id, (s) => s === "done" || s === "error");
       const updated = manager.get(ws.id);
       expect(updated).toBeDefined();
     }
   }, 30000);
+
+  it("does not group a standalone workspace, so it has no siblings", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Lone wolf",
+      prompt: "Do something alone",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    expect(manager.get(ws.id)!.groupId).toBeUndefined();
+    expect(manager.groupSiblings(ws.id)).toEqual([]);
+    expect(manager.groupSiblings("does-not-exist")).toEqual([]);
+  }, 15000);
+
+  it("reports a fan-out's siblings and keeps them isolated from other races", async () => {
+    const raceA = await manager.createWorkspaces({
+      title: "Race A",
+      prompt: "Attempt the task",
+      agentId: "mock",
+      count: 3,
+    });
+    const raceB = await manager.createWorkspaces({
+      title: "Race B",
+      prompt: "A different task",
+      agentId: "mock",
+      count: 2,
+    });
+    for (const ws of [...raceA, ...raceB]) {
+      await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    }
+
+    // Each attempt sees its two race-A peers — and never a race-B workspace.
+    const siblings = manager.groupSiblings(raceA[0].id);
+    expect(siblings.map((w) => w.id).sort()).toEqual(
+      [raceA[1].id, raceA[2].id].sort(),
+    );
+    expect(siblings.every((w) => w.id !== raceA[0].id)).toBe(true);
+    expect(siblings.some((w) => raceB.map((b) => b.id).includes(w.id))).toBe(
+      false,
+    );
+
+    // Picking a winner: archive the siblings, keep the chosen attempt. After
+    // pruning, the winner has no siblings left and the losers are gone.
+    for (const sib of manager.groupSiblings(raceA[0].id)) {
+      await manager.archive(sib.id);
+    }
+    expect(manager.groupSiblings(raceA[0].id)).toEqual([]);
+    expect(manager.get(raceA[0].id)).toBeDefined();
+    expect(manager.get(raceA[1].id)).toBeUndefined();
+    expect(manager.get(raceA[2].id)).toBeUndefined();
+    // Race B is untouched by pruning race A.
+    expect(manager.get(raceB[0].id)).toBeDefined();
+    expect(manager.get(raceB[1].id)).toBeDefined();
+  }, 40000);
 
   it("clones a workspace", async () => {
     const existing = manager.snapshot().find((w) => w.status === "done" && w.prompt);

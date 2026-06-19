@@ -44,6 +44,15 @@ list. They run in parallel; review their diffs side by side and merge whichever
 came out best, then archive the rest. (You can still re-roll a single workspace
 after the fact with `C` — fan-out just does it up front.)
 
+conduct remembers which workspaces came out of the same fan-out, so discarding
+the also-rans is one keystroke: select the attempt you want and press `w` (pick
+**w**inner). It archives the *other* attempts of that same race — stopping their
+agents and removing their worktrees and branches — and leaves the one you kept
+untouched, so you still merge (`m`) or push (`P`) it on your own terms; the two
+compose in either order. `w` only touches siblings from the same fan-out, never
+unrelated workspaces, and a workspace created on its own (or cloned with `C`)
+belongs to no race, so `w` simply reports there's nothing to prune.
+
 ## Attention alerts
 
 Running several agents at once only pays off if you can look away and get pinged
@@ -173,6 +182,7 @@ pnpm start ../my-repo   # or point at another repo
 | `i`                | broadcast a message to all marked agents        |
 | `e`                | rename the workspace title (↵ save · esc cancel) |
 | `C`                | clone — re-run this prompt in a fresh worktree |
+| `w`                | pick winner — keep this attempt, archive the rest of its fan-out |
 | `c`                | jump into a shell in the workspace's worktree  |
 | `!`                | run a one-off command in the worktree (output streams in the shell view) |
 | `m`                | merge (selected, or all marked when marks exist) |
@@ -200,6 +210,7 @@ pnpm start ../my-repo   # or point at another repo
 | `!`                | run a command in the worktree (shell view) · `s` stops it |
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
+| `w`                | pick winner — archive the rest of this fan-out |
 | `P`                | push the branch and open a pull request (`gh`) |
 | `y` / `n`          | allow / deny a permission request |
 | `S`                | ask the agent to build a skill    |

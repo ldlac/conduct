@@ -80,6 +80,7 @@ export interface HandlerState {
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
   doAutoImprove: (agentId?: string, focus?: AutoImproveFocus, count?: number) => void;
+  doPruneSiblings: (ws: Workspace | undefined) => void;
   doMergeMany: () => void;
   doArchiveMany: () => void;
   doRestartMany: () => void;
@@ -286,6 +287,12 @@ export function useConductKeys(s: HandlerState): void {
         }
         if (input === "C") {
           s.doClone(s.current);
+          return;
+        }
+        // `w` — pick the winner of a fan-out: keep the selected attempt and
+        // archive the other attempts of the same race (see doPruneSiblings).
+        if (input === "w") {
+          s.doPruneSiblings(s.current);
           return;
         }
         if (input === "A") {

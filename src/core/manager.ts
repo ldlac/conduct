@@ -59,6 +59,13 @@ export interface CreateOptions {
   title: string;
   prompt: string;
   agentId: string;
+  /**
+   * Fan-out group this workspace belongs to (see {@link Workspace.groupId}). Set
+   * by {@link WorkspaceManager.createWorkspaces} for a multi-attempt fan-out so
+   * the siblings can later be told apart from unrelated workspaces; omitted for a
+   * standalone workspace.
+   */
+  groupId?: string;
 }
 
 /** Outcome of pushing a workspace's branch to a remote (see {@link WorkspaceManager.push}). */
@@ -310,6 +317,7 @@ export class WorkspaceManager extends EventEmitter {
       title: opts.title || opts.prompt.slice(0, 40),
       prompt: opts.prompt,
       agentId: opts.agentId,
+      groupId: opts.groupId,
       branch,
       path: wtPath,
       status: "creating",
@@ -488,12 +496,18 @@ export class WorkspaceManager extends EventEmitter {
     const count = Math.max(1, Math.min(MAX_FANOUT, Math.floor(opts.count ?? 1)));
     if (count === 1) return [await this.createWorkspace(opts)];
     const base = opts.title || opts.prompt.slice(0, 40);
+    // Tag every attempt of this fan-out with one shared id so they can later be
+    // recognized as siblings — the basis for "keep the winner, archive the rest
+    // of this race" (see groupSiblings). A standalone workspace (count of 1
+    // above) gets none.
+    const groupId = `group-${genId()}`;
     const created: Workspace[] = [];
     for (let i = 0; i < count; i++) {
       created.push(
         await this.createWorkspace({
           ...opts,
           title: `${base} (${i + 1}/${count})`,
+          groupId,
         }),
       );
     }
@@ -1008,6 +1022,22 @@ export class WorkspaceManager extends EventEmitter {
       prompt: src.prompt,
       agentId: src.agentId,
     });
+  }
+
+  /**
+   * The *other* workspaces created in the same fan-out as `id` — its sibling
+   * attempts at the same prompt (see {@link Workspace.groupId}) — excluding the
+   * workspace itself. Returns an empty array for a workspace that belongs to no
+   * race (created on its own or cloned), which is the cue for the UI to say
+   * there's nothing to prune. This is the query behind "keep the winner, archive
+   * the rest": pick the attempt you want, and these are the ones to discard.
+   */
+  groupSiblings(id: string): Workspace[] {
+    const ws = this.workspaces.get(id);
+    if (!ws?.groupId) return [];
+    return [...this.workspaces.values()].filter(
+      (w) => w.id !== id && w.groupId === ws.groupId,
+    );
   }
 
   /**
