@@ -36,6 +36,17 @@ export interface ConductConfig {
    * Per-agent overrides. The key is the AgentBackend id.
    */
   agents?: Record<string, AgentConfig>;
+  /**
+   * Named prompt presets shown as quick-select options in the new-workspace
+   * form. Each preset needs a `label` (displayed in the picker) and a `prompt`
+   * (sent to the agent). Define them so common tasks ("add tests", "fix lint")
+   * are a keystroke away instead of typed from scratch every time.
+   *
+   * Accepts an array of `{ label, prompt }` objects, or a shorthand object
+   * mapping label → prompt (e.g. `{ "Add tests": "Write comprehensive tests" }`).
+   * Both forms are normalized into `PromptPreset[]` on load.
+   */
+  prompts?: PromptPreset[];
 }
 
 export interface AgentConfig {
@@ -43,6 +54,19 @@ export interface AgentConfig {
    * Extra CLI arguments appended to the agent's command.
    */
   args?: string;
+}
+
+/**
+ * A named prompt preset that appears as a quick-select option in the
+ * new-workspace form. Defined in conduct.json under the `prompts` key,
+ * these let users store reusable prompt templates (e.g. "add-tests",
+ * "fix-lint") and pick them without retyping.
+ */
+export interface PromptPreset {
+  /** A short name/label shown in the picker. */
+  label: string;
+  /** The prompt text to send to the agent. */
+  prompt: string;
 }
 
 const CONFIG_FILENAME = "conduct.json";
@@ -130,6 +154,36 @@ function normalizeConfig(
       cfg.agents = agents;
     } else {
       warn("agents must be an object");
+    }
+  }
+
+  if (parsed.prompts !== undefined) {
+    // Accept an array of { label, prompt } objects or a shorthand
+    // { label -> prompt } mapping.
+    if (Array.isArray(parsed.prompts)) {
+      const presets: PromptPreset[] = [];
+      for (const entry of parsed.prompts) {
+        if (isRecord(entry) && typeof entry.label === "string" && typeof entry.prompt === "string") {
+          const label = entry.label.trim();
+          const prompt = entry.prompt.trim();
+          if (label && prompt) presets.push({ label, prompt });
+        } else {
+          warn("prompts array entries must be objects with string label and prompt");
+        }
+      }
+      if (presets.length > 0) cfg.prompts = presets;
+    } else if (isRecord(parsed.prompts)) {
+      const presets: PromptPreset[] = [];
+      for (const [label, prompt] of Object.entries(parsed.prompts)) {
+        if (typeof prompt === "string" && label.trim() && prompt.trim()) {
+          presets.push({ label: label.trim(), prompt: prompt.trim() });
+        } else {
+          warn(`prompts.${label} must be a string`);
+        }
+      }
+      if (presets.length > 0) cfg.prompts = presets;
+    } else {
+      warn("prompts must be an array of { label, prompt } objects or an object mapping label -> prompt");
     }
   }
 

@@ -852,6 +852,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         agents={agents}
         defaultCount={config.defaultFanout}
         defaultAgentId={config.defaultAgent}
+        prompts={config.prompts}
         onCancel={() => setMode("list")}
         onSubmit={async ({ title, prompt, agentId, count }) => {
           setMode("list");
