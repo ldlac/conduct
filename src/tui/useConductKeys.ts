@@ -45,6 +45,12 @@ export interface HandlerState {
   setFiltering: (f: boolean) => void;
   filter: string;
   setFilter: React.Dispatch<React.SetStateAction<string>>;
+  globalSearching: boolean;
+  setGlobalSearching: (s: boolean) => void;
+  globalSearchQuery: string;
+  setGlobalSearchQuery: React.Dispatch<React.SetStateAction<string>>;
+  globalSearch: string;
+  setGlobalSearch: (s: string) => void;
   renaming: boolean;
   setRenaming: (r: boolean) => void;
   renameText: string;
@@ -100,6 +106,7 @@ export interface HandlerState {
   doSync: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
+  doExport: (ws: Workspace | undefined) => void;
   doPruneSiblings: (ws: Workspace | undefined) => void;
   doMergeMany: () => void;
   doArchiveMany: () => void;
@@ -170,6 +177,11 @@ export function useConductKeys(s: HandlerState): void {
 
       if (s.filtering) {
         handleFilter(input, key, s);
+        return;
+      }
+
+      if (s.globalSearching) {
+        handleGlobalSearch(input, key, s);
         return;
       }
 
@@ -341,6 +353,10 @@ export function useConductKeys(s: HandlerState): void {
           s.doClone(s.current);
           return;
         }
+        if (input === "E" && s.current) {
+          s.doExport(s.current);
+          return;
+        }
         // `w` — pick the winner of a fan-out: keep the selected attempt and
         // archive the other attempts of the same race (see doPruneSiblings).
         if (input === "w") {
@@ -424,6 +440,25 @@ function handleFilter(
     s.setFilter((f) => f.slice(0, -1));
   } else if (input && !key.ctrl && !key.meta) {
     s.setFilter((f) => f + input);
+  }
+}
+
+function handleGlobalSearch(
+  input: string,
+  key: { escape?: boolean; return?: boolean; backspace?: boolean; delete?: boolean; ctrl?: boolean; meta?: boolean },
+  s: HandlerState,
+): void {
+  if (key.escape) {
+    s.setGlobalSearching(false);
+    s.setGlobalSearchQuery("");
+    s.setGlobalSearch("");
+  } else if (key.return) {
+    s.setGlobalSearch(s.globalSearchQuery);
+    s.setGlobalSearching(false);
+  } else if (key.backspace || key.delete) {
+    s.setGlobalSearchQuery((q) => q.slice(0, -1));
+  } else if (input && !key.ctrl && !key.meta) {
+    s.setGlobalSearchQuery((q) => q + input);
   }
 }
 
@@ -523,7 +558,7 @@ function handleCompare(
 
 function handleListMode(
   input: string,
-  key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; tab?: boolean },
+  key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; tab?: boolean; ctrl?: boolean },
   s: HandlerState,
 ): void {
   if (input === "g")
@@ -555,6 +590,9 @@ function handleListMode(
     }
   } else if (input === "/") {
     s.setFiltering(true);
+  } else if (key.ctrl && input === "f") {
+    s.setGlobalSearching(true);
+    s.setGlobalSearchQuery("");
   } else if (input === "i") {
     // Broadcast a follow-up to the whole marked set at once. Only meaningful
     // with marks (single-workspace replies happen with `i` in detail view), and

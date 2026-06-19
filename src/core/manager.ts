@@ -301,6 +301,20 @@ export class WorkspaceManager extends EventEmitter {
     this.emit("attention", ws, reason);
   }
 
+  /**
+   * Add the elapsed time since `runStartedAt` to `totalDurationMs` and clear
+   * the start timestamp. Called when a turn ends or the process exits, so the
+   * total accumulates across turns and survives restarts. Safe to call
+   * repeatedly — the second call is a no-op when `runStartedAt` is already
+   * undefined.
+   */
+  private accumulateDuration(ws: Workspace): void {
+    if (ws.runStartedAt == null) return;
+    const elapsed = Date.now() - ws.runStartedAt;
+    ws.totalDurationMs = (ws.totalDurationMs ?? 0) + elapsed;
+    ws.runStartedAt = undefined;
+  }
+
   private append(ws: Workspace, text: string): void {
     // Split on both LF and CRLF: child processes on Windows can emit `\r\n`, and
     // a stray trailing `\r` would render as a control glyph in the output pane.
@@ -646,8 +660,9 @@ export class WorkspaceManager extends EventEmitter {
       if (usesStdin && agent.turnEnded?.(raw)) {
         ws.awaitingInput = (agent.awaitsReply?.(raw) ?? false) || !!ws.pendingQuestion;
         if (ws.status === "running") ws.status = "done";
-        // The turn is over: the agent is idle, so stop its elapsed-time clock.
-        ws.runStartedAt = undefined;
+        // The turn is over: the agent is idle, so stop its elapsed-time clock
+        // and accumulate the duration so it survives across turns.
+        this.accumulateDuration(ws);
         // The agent just went idle, so the worktree has settled: refresh the
         // diff size badge to reflect what this turn produced.
         void this.refreshStat(ws);
@@ -706,8 +721,9 @@ export class WorkspaceManager extends EventEmitter {
       // A request or question from a process that's now gone can't be answered.
       ws.pendingPermission = undefined;
       ws.pendingQuestion = undefined;
-      // The process is gone, so the turn clock stops regardless of outcome.
-      ws.runStartedAt = undefined;
+      // The process is gone, so the turn clock stops regardless of outcome
+      // and any remaining run time is accumulated.
+      this.accumulateDuration(ws);
       if (ws.status === "running") {
         ws.status = code === 0 ? "done" : "error";
         // A one-shot agent (or any process that exits on its own) reaches its
@@ -1295,6 +1311,61 @@ export class WorkspaceManager extends EventEmitter {
     this.shellProcs.delete(id);
     this.setupProcs.delete(id);
     this.touch();
+  }
+
+  /**
+   * Export a workspace's full transcript, diff, and metadata to a markdown file
+   * in `~/.conduct/exports/`. The file is timestamped and named after the
+   * workspace title so it's easy to find later. Returns the absolute path of the
+   * written file.
+   */
+  async exportWorkspace(id: string): Promise<string> {
+    const ws = this.workspaces.get(id);
+    if (!ws) throw new Error("No such workspace");
+
+    const exportsDir = path.join(os.homedir(), ".conduct", "exports");
+    await fs.mkdir(exportsDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeSlug = slugify(ws.title);
+    const filePath = path.join(exportsDir, `${safeSlug}-${timestamp}.md`);
+
+    const diff = await this.git.diff(ws.path, this.baseBranch).catch(() => "");
+
+    const header = [
+      `# Workspace: ${ws.title}`,
+      "",
+      `**Agent:** ${ws.agentId} · **Branch:** ${ws.branch} · **Status:** ${ws.status}`,
+      `**Created:** ${new Date(ws.createdAt).toISOString()}`,
+      ws.summary ? `**Summary:** ${ws.summary}` : null,
+      ws.notes ? `**Notes:** ${ws.notes}` : null,
+      ws.usage ? `**Tokens:** ${JSON.stringify(ws.usage)}` : null,
+      "",
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
+
+    const output = [
+      "## Output",
+      "",
+      ...(ws.output.length > 0 ? ws.output : ["(no output)"]),
+      "",
+    ].join("\n");
+
+    const diffSection = [
+      "## Diff",
+      "",
+      diff || "(no changes)",
+      "",
+    ].join("\n");
+
+    const shellSection = ws.shellOutput?.length
+      ? ["## Shell Output", "", ...ws.shellOutput, ""].join("\n")
+      : "";
+
+    const content = [header, output, diffSection, shellSection].join("\n");
+    await fs.writeFile(filePath, content, "utf-8");
+    return filePath;
   }
 
   /** Kill every running agent and flush state synchronously (used on quit). */

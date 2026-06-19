@@ -108,6 +108,13 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   // the list even after the user stops typing, until cleared with esc.
   const [filtering, setFiltering] = useState(false);
   const [filter, setFilter] = useState("");
+  // Cross-workspace full-text search across all outputs. `globalSearching` is
+  // the text-entry mode (typing the query); `globalSearch` is the applied query.
+  // When set, the workspace list is narrowed to workspaces matching the query
+  // and each shows its match count.
+  const [globalSearching, setGlobalSearching] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearch, setGlobalSearch] = useState("");
   // Inline rename of the selected workspace's title. Like the filter box, the
   // rename box owns the keyboard while open so letters edit the title instead of
   // triggering commands; `renameText` is the in-progress edit.
@@ -216,17 +223,46 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     };
   }, [stdout]);
 
+  // Cross-workspace full-text search results: for each workspace, how many
+  // lines in its output, shell output, title, prompt, summary, and notes match
+  // the query. Computed so the list can show match counts per workspace.
+  const workspaceSearchResults = useMemo((): Map<string, number> => {
+    if (!globalSearch) return new Map();
+    const q = globalSearch.toLowerCase();
+    const results = new Map<string, number>();
+    for (const ws of items) {
+      let count = 0;
+      for (const line of ws.output) {
+        if (line.toLowerCase().includes(q)) count++;
+      }
+      if (ws.shellOutput) {
+        for (const line of ws.shellOutput) {
+          if (line.toLowerCase().includes(q)) count++;
+        }
+      }
+      if (ws.title.toLowerCase().includes(q)) count++;
+      if (ws.prompt.toLowerCase().includes(q)) count++;
+      if (ws.summary?.toLowerCase().includes(q)) count++;
+      if (ws.notes?.toLowerCase().includes(q)) count++;
+      if (count > 0) results.set(ws.id, count);
+    }
+    return results;
+  }, [globalSearch, items]);
+
   // Grouped/ordered view that the list renders and selection indexes into.
-  // The title filter narrows the set first; an out-of-view selection simply
-  // falls back to the first visible row (see selectedIndex below) and is
-  // restored when the filter is cleared.
+  // The title filter narrows the set first, then the global search narrows
+  // further; an out-of-view selection simply falls back to the first visible
+  // row (see selectedIndex below) and is restored when the filter is cleared.
   const ordered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    const matched = q
+    const titleMatched = q
       ? items.filter((w) => w.title.toLowerCase().includes(q))
       : items;
+    const matched = globalSearch
+      ? titleMatched.filter((w) => workspaceSearchResults.has(w.id))
+      : titleMatched;
     return sortWorkspaces(matched, sortMode);
-  }, [items, filter, sortMode]);
+  }, [items, filter, sortMode, globalSearch, workspaceSearchResults]);
   // Session-wide token/cost tally for the status bar.
   const sessionUsage = useMemo(() => sumUsage(items), [items]);
   const selectedIndex = Math.max(
@@ -512,6 +548,20 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
             ? "a command is already running here — wait or stop it (s)"
             : "couldn't run command (no worktree?)",
         );
+      }
+    },
+    [manager, flash],
+  );
+
+  const doExport = useCallback(
+    async (ws: Workspace | undefined) => {
+      if (!ws) return;
+      flash(`exporting ${ws.title}…`);
+      try {
+        const filePath = await manager.exportWorkspace(ws.id);
+        flash(`exported ${ws.title} → ${filePath}`);
+      } catch (err) {
+        flash(`export failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     [manager, flash],
@@ -827,6 +877,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchIndex, setSearchIndex,
     filtering, setFiltering,
     filter, setFilter,
+    globalSearching, setGlobalSearching,
+    globalSearchQuery, setGlobalSearchQuery,
+    globalSearch, setGlobalSearch,
     renaming, setRenaming,
     renameText, setRenameText,
     noting, setNoting,
@@ -838,7 +891,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
     switchWorkspace, openCommand,
-    doMerge, doPushPr, doRestart, doSync, doArchive: doArchiveWithConfirm, doClone, doPruneSiblings,
+    doMerge, doPushPr, doRestart, doSync, doArchive: doArchiveWithConfirm, doExport, doClone, doPruneSiblings,
     doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doSyncMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,
@@ -947,6 +1000,11 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
           filter={filter}
           sortLabel={SORT_LABELS[sortMode]}
           marks={marks}
+          searchResults={
+            globalSearch && workspaceSearchResults.size > 0
+              ? workspaceSearchResults
+              : undefined
+          }
         />
         {showFileList && current && view === "diff" && diffFiles.length > 0 ? (
           <DiffFileList
@@ -1030,6 +1088,9 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         markedCount={markedIds.length}
         searching={searching}
         searchQuery={searchQuery}
+        globalSearching={globalSearching}
+        globalSearchQuery={globalSearchQuery}
+        globalSearch={globalSearch}
       />
       {confirming && (
         <ConfirmDialog

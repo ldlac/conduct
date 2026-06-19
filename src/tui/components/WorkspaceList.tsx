@@ -44,11 +44,15 @@ export function formatDuration(ms: number): string {
   return `${h}h${m % 60}m`;
 }
 
-/** Live elapsed-time string for an actively-running workspace, or "" when it
- * isn't running. `now` is supplied by the caller so the value advances as the
- * caller re-renders on a timer rather than the badge reading the clock itself. */
+/** Elapsed-time string for a workspace. When the agent is actively running
+ * shows the live runtime (uses `now` from the caller's render timer); when
+ * idle or done shows the total accumulated duration across all turns, so the
+ * badge never goes blank once the agent has done any work. Returns "" when
+ * there's nothing to show — the agent never ran. */
 export function runtimeText(ws: Workspace, now: number): string {
-  return ws.runStartedAt ? formatDuration(now - ws.runStartedAt) : "";
+  if (ws.runStartedAt) return formatDuration(now - ws.runStartedAt);
+  if (ws.totalDurationMs) return formatDuration(ws.totalDurationMs);
+  return "";
 }
 
 /** Dim elapsed-time badge for a running workspace. Renders nothing when idle. */
@@ -186,6 +190,8 @@ interface Props {
   sortLabel?: string;
   /** Set of workspace ids marked for batch operations. */
   marks?: Set<string>;
+  /** Cross-workspace full-text search: match count per workspace id. */
+  searchResults?: Map<string, number>;
 }
 
 export function WorkspaceList({
@@ -197,6 +203,7 @@ export function WorkspaceList({
   filter,
   sortLabel,
   marks,
+  searchResults,
 }: Props) {
   // Precompute group counts for display in group headers.
   const groupCounts = new Map<string, number>();
@@ -224,6 +231,9 @@ export function WorkspaceList({
           <Text color="yellow"> · {marks.size} marked</Text>
         ) : null}
         {filter ? <Text color="cyan"> /{filter}</Text> : null}
+        {searchResults ? (
+          <Text color="green"> 🔍{searchResults.size}</Text>
+        ) : null}
       </Text>
       {items.length === 0 && (
         <Text dimColor>
@@ -328,6 +338,12 @@ export function WorkspaceList({
                 <Text color="yellow" bold>
                   {" "}
                   ●
+                </Text>
+              )}
+              {searchResults?.has(ws.id) && (
+                <Text color="green">
+                  {" "}
+                  {searchResults.get(ws.id)}×
                 </Text>
               )}
             </Box>
