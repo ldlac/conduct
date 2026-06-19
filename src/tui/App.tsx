@@ -21,6 +21,7 @@ import {
   NewWorkspaceForm,
   type AgentInfo,
 } from "./components/NewWorkspaceForm.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { useConductKeys } from "./useConductKeys.js";
 
 type Mode = "list" | "detail" | "new";
@@ -864,46 +865,49 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
 
   if (mode === "new") {
     return (
-      <NewWorkspaceForm
-        agents={agents}
-        defaultCount={config.defaultFanout}
-        defaultAgentId={config.defaultAgent}
-        prompts={config.prompts}
-        onCancel={() => setMode("list")}
-        onSubmit={async ({ title, prompt, agentId, count }) => {
-          setMode("list");
-          flash(
-            count > 1
-              ? `launching ${count} × ${agentId}…`
-              : `launching ${agentId}…`,
-          );
-          const created = await manager.createWorkspaces({
-            title,
-            prompt,
-            agentId,
-            count,
-          });
-          // Land the cursor on the first of the batch so the user sees the
-          // fan-out start streaming right away.
-          if (created[0]) setSelectedId(created[0].id);
-        }}
-      />
+      <ErrorBoundary label="NewWorkspaceForm">
+        <NewWorkspaceForm
+          agents={agents}
+          defaultCount={config.defaultFanout}
+          defaultAgentId={config.defaultAgent}
+          prompts={config.prompts}
+          onCancel={() => setMode("list")}
+          onSubmit={async ({ title, prompt, agentId, count }) => {
+            setMode("list");
+            flash(
+              count > 1
+                ? `launching ${count} × ${agentId}…`
+                : `launching ${agentId}…`,
+            );
+            const created = await manager.createWorkspaces({
+              title,
+              prompt,
+              agentId,
+              count,
+            });
+            // Land the cursor on the first of the batch so the user sees the
+            // fan-out start streaming right away.
+            if (created[0]) setSelectedId(created[0].id);
+          }}
+        />
+      </ErrorBoundary>
     );
   }
 
   return (
-    // Render one row short of the full terminal height, and HARD-CLIP to it.
-    // Ink only does its flicker-free incremental repaint while the rendered
-    // output is *shorter* than the terminal; the instant its height reaches
-    // stdout.rows it switches to writing ansiEscapes.clearTerminal — a
-    // full-screen wipe — on every frame, which is the worst flicker. Height
-    // alone isn't enough: with the default `overflow: visible`, optional lines
-    // (a merge-conflict/error notice, the reply box, a wrapped flash message)
-    // let DetailPane spill past its row box and push the real output height back
-    // up to stdout.rows, re-arming the wipe. `overflow="hidden"` clips the frame
-    // to exactly size.rows - 1 no matter what's inside, so we stay on the
-    // incremental path unconditionally. (index.tsx then removes the residual
-    // erase-then-redraw flash from that incremental path; see flickerFreeStdout.)
+    <ErrorBoundary label="App">
+    {/* Render one row short of the full terminal height, and HARD-CLIP to it. */}
+    {/* Ink only does its flicker-free incremental repaint while the rendered
+    output is *shorter* than the terminal; the instant its height reaches
+    stdout.rows it switches to writing ansiEscapes.clearTerminal — a
+    full-screen wipe — on every frame, which is the worst flicker. Height
+    alone isn't enough: with the default `overflow: visible`, optional lines
+    (a merge-conflict/error notice, the reply box, a wrapped flash message)
+    let DetailPane spill past its row box and push the real output height back
+    up to stdout.rows, re-arming the wipe. `overflow="hidden"` clips the frame
+    to exactly size.rows - 1 no matter what's inside, so we stay on the
+    incremental path unconditionally. (index.tsx then removes the residual
+    erase-then-redraw flash from that incremental path; see flickerFreeStdout.) */}
     <Box
       position="relative"
       flexDirection="column"
@@ -1035,5 +1039,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         />
       )}
     </Box>
+    </ErrorBoundary>
   );
 }
