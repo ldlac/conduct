@@ -217,8 +217,21 @@ export function useConductKeys(s: HandlerState): void {
           return;
         }
         if (input === "q" || (key.ctrl && input === "c")) {
-          s.manager.shutdown();
-          exit();
+          const running = s.ordered.filter(
+            (w) => w.status === "running" || w.status === "creating",
+          );
+          if (running.length > 0) {
+            s.setConfirming({
+              label: `Quit with ${running.length} running workspace${running.length === 1 ? "" : "s"}? They can be restarted later.`,
+              action: () => {
+                s.manager.shutdown();
+                exit();
+              },
+            });
+          } else {
+            s.manager.shutdown();
+            exit();
+          }
           return;
         }
         if (input === "n") {
