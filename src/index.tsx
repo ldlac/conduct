@@ -1,11 +1,12 @@
 import React from "react";
 import path from "node:path";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { render } from "ink";
 import { WorkspaceManager } from "./core/manager.js";
 import { availableAgents } from "./core/agents.js";
+import { interactiveShell } from "./core/platform.js";
 import type { Workspace } from "./core/types.js";
 import { App } from "./tui/App.js";
 import { flickerFreeStdout } from "./tui/flicker-free-stdout.js";
@@ -18,20 +19,6 @@ function shellEnv(ws: Workspace): NodeJS.ProcessEnv {
     CONDUCT_WORKSPACE: ws.title,
     CONDUCT_WORKTREE: ws.path,
   };
-}
-
-// Pick the shell to launch. We prefer the user's $SHELL, but it can be unset
-// (some minimal/login environments) or point at a binary that isn't actually
-// on this machine — spawning a missing shell is exactly the kind of failure
-// that made the old handoff "just die." Fall back to the first common shell
-// that exists, and only as a last resort to a bare "/bin/sh" name.
-function pickShell(): string {
-  const preferred = process.env.SHELL;
-  if (preferred && existsSync(preferred)) return preferred;
-  for (const candidate of ["/bin/bash", "/bin/zsh", "/usr/bin/fish", "/bin/sh"]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return preferred || "/bin/sh";
 }
 
 // Preferred path when we're already running inside tmux: open the worktree
@@ -47,7 +34,7 @@ function openInTmux(ws: Workspace): boolean {
   const name = (ws.title || "worktree").replace(/[^\w.-]/g, "-").slice(0, 40);
   const res = spawnSync(
     "tmux",
-    ["new-window", "-c", ws.path, "-n", name, pickShell()],
+    ["new-window", "-c", ws.path, "-n", name, interactiveShell()],
     { stdio: "ignore" },
   );
   return res.status === 0;
@@ -68,7 +55,7 @@ function openInTmux(ws: Workspace): boolean {
 // stdin before spawning; the fresh render() in main() re-arms everything after.
 function runShell(ws: Workspace): Promise<void> {
   return new Promise((resolve) => {
-    const shell = pickShell();
+    const shell = interactiveShell();
     const stdin = process.stdin;
     try {
       if (stdin.isTTY) stdin.setRawMode(false);
