@@ -627,6 +627,15 @@ export class WorkspaceManager extends EventEmitter {
         ws.usage = addUsage(ws.usage, usage);
         changed = true;
       }
+      // The agent's closing message for this turn becomes the basis for the
+      // commit/merge message (see buildCommitMessage). Keep the latest one; a
+      // new turn's summary overwrites the previous so it always describes the
+      // most recent work.
+      const summary = agent.parseSummary?.(raw);
+      if (summary) {
+        ws.summary = summary;
+        changed = true;
+      }
       const pretty = agent.parseLine ? agent.parseLine(raw) : raw;
       if (pretty != null) this.append(ws, pretty);
       else if (changed) this.touch();
@@ -1041,10 +1050,10 @@ export class WorkspaceManager extends EventEmitter {
     // workspace that's now merged.
     if (this.isRunning(id)) this.stop(id);
 
-    await this.git.commitAll(ws.path, `conduct: ${ws.title}`);
+    await this.git.commitAll(ws.path, buildCommitMessage(ws.title, ws.summary));
     const result = await this.git.merge(
       ws.branch,
-      `Merge conduct workspace: ${ws.title}`,
+      `Merge conduct workspace: ${commitSubject(ws.title, ws.summary)}`,
     );
     if (!result.ok) {
       ws.conflicts = result.conflicts;
@@ -1077,7 +1086,7 @@ export class WorkspaceManager extends EventEmitter {
       return { ok: false, error: `no '${remote}' remote configured for this repo` };
     }
     try {
-      await this.git.commitAll(ws.path, `conduct: ${ws.title}`);
+      await this.git.commitAll(ws.path, buildCommitMessage(ws.title, ws.summary));
       await this.git.push(ws.branch, { remote });
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1249,6 +1258,126 @@ export function cloneTitle(title: string): string {
     return `${m[1]} (copy ${n})`;
   }
   return `${base} (copy)`;
+}
+
+/**
+ * Conventional-commit soft limit for the subject line. 72 keeps the subject
+ * readable in `git log --oneline` and on GitHub without truncation.
+ */
+const COMMIT_SUBJECT_MAX = 72;
+
+/**
+ * Conventional-commit types we infer from a summary, paired with the words that
+ * signal each. Order is the tie-breaker only: when two types' keywords appear,
+ * the one whose keyword occurs *earliest* in the text wins (the summary usually
+ * leads with the main action — "Added …", "Fixed …"), and ties fall back to
+ * this order. `chore` carries no keywords; it's the fallback when none match.
+ */
+const COMMIT_TYPES: Array<{ type: string; re: RegExp }> = [
+  { type: "fix", re: /\b(fix(?:e[sd])?|bug(?:s|fix)?|resolve[sd]?|patch(?:e[sd])?|correct(?:s|ed)?|repair(?:s|ed)?)\b/i },
+  { type: "feat", re: /\b(add(?:s|ed)?|implement(?:s|ed)?|introduce[sd]?|support(?:s|ed)?|create[sd]?|new feature|feature)\b/i },
+  { type: "docs", re: /\b(document(?:s|ation|ed)?|readme|docstring|comment(?:s|ed)?)\b/i },
+  { type: "test", re: /\b(test(?:s|ing|ed)?|spec(?:s)?|coverage)\b/i },
+  { type: "perf", re: /\b(optimi[sz]e[sd]?|performance|speed(?: ?up)?|faster|perf)\b/i },
+  { type: "refactor", re: /\b(refactor(?:s|ed|ing)?|restructure[sd]?|simplif(?:y|ies|ied)|reorganize[sd]?|extract(?:s|ed)?|rename[sd]?|clean(?:ed)? ?up|consolidat\w*)\b/i },
+];
+
+/** A summary that already starts with a conventional-commit subject. */
+const CONVENTIONAL_PREFIX =
+  /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]*\))?!?:\s/i;
+
+/** Conversational lead-ins the agent tends to open with; stripped before use. */
+const SUMMARY_LEADIN =
+  /^(?:i(?:'ve| have)?|we(?:'ve| have)?|this (?:commit|change|pr|update)|successfully|just)\s+/i;
+
+/**
+ * Replace em/en dashes (and any spaces hugging them) with a comma so generated
+ * messages don't carry dash punctuation. A trailing dash becomes a bare comma,
+ * cleaned up by the trim that follows.
+ */
+function sanitizeDashes(text: string): string {
+  return text.replace(/\s*[—–]\s*/g, ", ");
+}
+
+/**
+ * Infer a conventional-commit type from summary text by whichever type's
+ * keyword appears earliest (see {@link COMMIT_TYPES}); falls back to `chore`.
+ */
+export function classifyCommitType(text: string): string {
+  let best = "chore";
+  let bestIndex = Infinity;
+  for (const { type, re } of COMMIT_TYPES) {
+    const m = re.exec(text);
+    if (m && m.index < bestIndex) {
+      bestIndex = m.index;
+      best = type;
+    }
+  }
+  return best;
+}
+
+/** Trim a description to fit `budget`, cutting at a word boundary when possible. */
+function fitSubject(desc: string, budget: number): string {
+  if (desc.length <= budget) return desc;
+  const cut = desc.slice(0, budget);
+  const lastSpace = cut.lastIndexOf(" ");
+  // Only break on a space if it leaves a meaningful chunk; otherwise hard-cut.
+  return (lastSpace > budget / 2 ? cut.slice(0, lastSpace) : cut).trimEnd();
+}
+
+/**
+ * Compose a commit message from a workspace's title and the agent's final
+ * summary (see {@link Workspace.summary}). When a summary is present it drives
+ * the message: its first line, normalized into a conventional-commit subject
+ * (`type: description`, lower-cased, no trailing period, capped to a readable
+ * length), with the rest of the summary as the body — so the commit says what
+ * the agent actually did. With no summary it falls back to the workspace title,
+ * still as a conventional `chore:`-style subject. A summary that already opens
+ * with a conventional subject is kept as-is (just length-capped).
+ */
+export function buildCommitMessage(title: string, summary?: string): string {
+  const clean = summary ? sanitizeDashes(summary).trim() : "";
+  const source = clean || sanitizeDashes(title).trim() || "update";
+  const lines = source.split("\n");
+  const firstLine = lines[0].trim();
+  const rest = clean ? lines.slice(1).join("\n").trim() : "";
+
+  // Already a conventional subject (e.g. the agent wrote "feat: …")? Respect it.
+  if (CONVENTIONAL_PREFIX.test(firstLine)) {
+    const subject = fitSubject(firstLine, COMMIT_SUBJECT_MAX);
+    const body = subject === firstLine ? rest : clean;
+    return body ? `${subject}\n\n${body}` : subject;
+  }
+
+  const type = classifyCommitType(source);
+  // Strip a conversational lead-in and trailing punctuation.
+  let desc = firstLine.replace(SUMMARY_LEADIN, "").replace(/[.\s]+$/, "");
+  // Drop a leading verb of the chosen type so the subject doesn't repeat it
+  // ("fix: fix the race" → "fix: the race"); keep it only if that empties desc.
+  const typeRe = COMMIT_TYPES.find((t) => t.type === type)?.re;
+  if (typeRe) {
+    const stripped = desc.replace(
+      new RegExp(`^\\s*${typeRe.source}[:\\s]+`, "i"),
+      "",
+    );
+    if (stripped.trim()) desc = stripped;
+  }
+  desc = desc.trim();
+  // Lower-case the first letter so the description reads as a conventional summary.
+  if (desc) desc = desc[0].toLowerCase() + desc.slice(1);
+  else desc = "update";
+
+  const budget = COMMIT_SUBJECT_MAX - (type.length + 2);
+  const subject = `${type}: ${fitSubject(desc, budget)}`;
+  // If the first line had to be shortened, keep the whole summary in the body so
+  // no detail is lost; otherwise the body is just the remaining lines.
+  const body = clean ? (desc.length > budget ? clean : rest) : "";
+  return body ? `${subject}\n\n${body}` : subject;
+}
+
+/** First line (subject) of the commit message, for the merge-commit summary. */
+export function commitSubject(title: string, summary?: string): string {
+  return buildCommitMessage(title, summary).split("\n", 1)[0];
 }
 
 async function pathExists(p: string): Promise<boolean> {
