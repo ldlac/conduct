@@ -283,6 +283,12 @@ export function WorkspaceList({
                   <RuntimeBadge ws={ws} now={now} />
                 </Text>
               )}
+              {ws.setupRunning && (
+                <Text color="yellow">
+                  {" "}
+                  ⚙
+                </Text>
+              )}
               {ws.pendingPermission && (
                 <Text color="yellow" bold>
                   {" "}

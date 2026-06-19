@@ -113,6 +113,13 @@ export class WorkspaceManager extends EventEmitter {
    * without either clobbering the other's lifecycle.
    */
   private shellProcs = new Map<string, ChildProcess>();
+  /**
+   * Live processes for the per-worktree setup commands (see {@link startWithSetup}),
+   * keyed by workspace id. Tracked separately from the agent ({@link procs}) and
+   * runner ({@link shellProcs}) processes so a setup that's still running can be
+   * killed on archive/quit without disturbing the others.
+   */
+  private setupProcs = new Map<string, ChildProcess>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** Pending coalesced `update` emission; see {@link UPDATE_THROTTLE_MS}. */
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -318,8 +325,144 @@ export class WorkspaceManager extends EventEmitter {
       return ws;
     }
 
-    this.startAgent(ws);
+    // Ready the worktree (config `setup`) and then spawn the agent. Deliberately
+    // not awaited: the worktree exists, so the workspace can be returned (and the
+    // next fan-out worktree created) right away while setup + the agent run in the
+    // background. The workspace stays `creating` until the agent actually starts.
+    void this.startWithSetup(ws);
     return ws;
+  }
+
+  /**
+   * Run the configured setup command(s) in a freshly created worktree, then
+   * spawn the agent — the bridge between {@link createWorkspace} and
+   * {@link startAgent} that readies an environment git doesn't track (deps, a
+   * `.env`, generated code) before the agent works in it. With no `setup`
+   * configured this is a thin pass-through to {@link startAgent}. If any setup
+   * command fails the agent is *not* started: the workspace lands in `error`
+   * with the setup output in its transcript, so a broken environment surfaces
+   * loudly instead of an agent flailing in it. Tolerant of the workspace being
+   * archived mid-setup (its removal from the map ends the flow quietly).
+   */
+  private async startWithSetup(ws: Workspace): Promise<void> {
+    const ok = await this.runSetup(ws);
+    // The workspace may have been archived while setup ran (which kills the
+    // setup process and drops it from the map); if so, there's nothing to start.
+    if (!this.workspaces.has(ws.id)) return;
+    if (!ok) {
+      ws.status = "error";
+      ws.error = "setup failed";
+      ws.setupRunning = false;
+      ws.runStartedAt = undefined;
+      this.notifyAttention(ws, "error");
+      this.touch();
+      return;
+    }
+    this.startAgent(ws);
+  }
+
+  /**
+   * Run each configured setup command (see {@link config.ConductConfig.setup})
+   * in order, streaming its output into the workspace transcript (prefixed `⚙`
+   * to set it apart from agent output). Stops at the first non-zero exit and
+   * returns false; returns true when all commands succeed or none are
+   * configured. Sets {@link Workspace.setupRunning} for the duration so the UI
+   * can explain the `creating` state.
+   */
+  private async runSetup(ws: Workspace): Promise<boolean> {
+    const cmds = this.config.setup ?? [];
+    if (cmds.length === 0) return true;
+    ws.setupRunning = true;
+    this.append(
+      ws,
+      `⚙ setup — running ${cmds.length} command${cmds.length === 1 ? "" : "s"} in the worktree`,
+    );
+    for (const cmd of cmds) {
+      // Bail if the workspace was archived between commands.
+      if (!this.workspaces.has(ws.id)) return false;
+      this.append(ws, `⚙ $ ${cmd}`);
+      const code = await this.runSetupCommand(ws, cmd);
+      if (code !== 0) {
+        ws.setupRunning = false;
+        this.append(ws, `⚙ ✗ setup failed (exit ${code}) — agent not started`);
+        this.touch();
+        return false;
+      }
+    }
+    ws.setupRunning = false;
+    this.append(ws, "⚙ ✓ setup complete");
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Spawn one setup command in the worktree and stream its output, resolving
+   * with the exit code (non-zero on spawn failure, so the caller treats an
+   * un-launchable command as a failed step). Mirrors {@link runCommand}'s shell
+   * invocation — `$SHELL -c` with `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE` and the
+   * config `env` exported — so setup sees the same environment as both the
+   * in-app runner and the agent.
+   */
+  private runSetupCommand(ws: Workspace, command: string): Promise<number> {
+    return new Promise((resolve) => {
+      const shell = process.env.SHELL || "/bin/bash";
+      const cfgEnv: NodeJS.ProcessEnv = {};
+      if (this.config.env) Object.assign(cfgEnv, this.config.env);
+      let child: ChildProcess;
+      try {
+        child = spawn(shell, ["-c", command], {
+          cwd: ws.path,
+          env: {
+            ...process.env,
+            ...cfgEnv,
+            CONDUCT_WORKSPACE: ws.title,
+            CONDUCT_WORKTREE: ws.path,
+          },
+          // No stdin: setup commands are non-interactive, exactly like the
+          // in-app runner. One that reads stdin sees EOF rather than hanging.
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (err) {
+        this.append(
+          ws,
+          `⚙ ⚠ ${err instanceof Error ? err.message : String(err)}`,
+        );
+        resolve(1);
+        return;
+      }
+      this.setupProcs.set(ws.id, child);
+      const rls: readline.Interface[] = [];
+      if (child.stdout) {
+        const rl = readline.createInterface({ input: child.stdout });
+        rl.on("line", (l) => this.append(ws, `⚙ ${l}`));
+        rls.push(rl);
+      }
+      if (child.stderr) {
+        const rl = readline.createInterface({ input: child.stderr });
+        rl.on("line", (l) => this.append(ws, `⚙ ${l}`));
+        rls.push(rl);
+      }
+      const closeRl = () => {
+        for (const rl of rls) rl.close();
+      };
+      child.on("error", (err) => {
+        closeRl();
+        this.append(ws, `⚙ ⚠ ${err.message}`);
+        this.setupProcs.delete(ws.id);
+        resolve(1);
+      });
+      child.on("close", (code) => {
+        closeRl();
+        this.setupProcs.delete(ws.id);
+        resolve(code ?? 0);
+      });
+    });
+  }
+
+  /** Stop a running setup command (see {@link startWithSetup}); a no-op if none is live. */
+  private stopSetup(id: string): void {
+    const child = this.setupProcs.get(id);
+    if (child) child.kill("SIGTERM");
   }
 
   /**
@@ -993,9 +1136,10 @@ export class WorkspaceManager extends EventEmitter {
     const ws = this.workspaces.get(id);
     if (!ws) return;
     this.stop(id);
-    // A runner command holds the worktree open too; kill it before the worktree
-    // is removed out from under it.
+    // A runner command or a still-running setup holds the worktree open too;
+    // kill both before the worktree is removed out from under them.
     this.stopCommand(id);
+    this.stopSetup(id);
     try {
       if (ws.path) await this.git.removeWorktree(ws.path);
     } catch {
@@ -1009,15 +1153,18 @@ export class WorkspaceManager extends EventEmitter {
     this.workspaces.delete(id);
     this.procs.delete(id);
     this.shellProcs.delete(id);
+    this.setupProcs.delete(id);
     this.touch();
   }
 
   /** Kill every running agent and flush state synchronously (used on quit). */
   shutdown(): void {
     for (const child of this.procs.values()) child.kill("SIGTERM");
-    // Runner commands (see runCommand) are children too; don't leave a stray
-    // `pnpm test` running after the TUI quits.
+    // Runner commands (see runCommand) and setup commands (see startWithSetup)
+    // are children too; don't leave a stray `pnpm test` / `pnpm install` running
+    // after the TUI quits.
     for (const child of this.shellProcs.values()) child.kill("SIGTERM");
+    for (const child of this.setupProcs.values()) child.kill("SIGTERM");
     this.cancelSave();
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);

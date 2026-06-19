@@ -695,3 +695,112 @@ describe("WorkspaceManager — resumable agent (opencode)", () => {
     expect(rManager.acceptsInput(ws.id)).toBe(true);
   }, 20000);
 });
+
+/**
+ * Exercises the per-worktree `setup` commands (conduct.json) that run before the
+ * agent starts. Each test points the manager at its own repo carrying a specific
+ * `setup` config so the success and failure paths can be asserted independently.
+ */
+describe("WorkspaceManager — worktree setup commands", () => {
+  let sTmp: string;
+  let savedHome: string | undefined;
+
+  async function openWith(setup: unknown): Promise<{ repo: string; mgr: WorkspaceManager }> {
+    const repo = path.join(sTmp, `repo-${Math.abs(JSON.stringify(setup).length)}-${Date.now()}`);
+    await initRepo(repo);
+    fs.writeFileSync(path.join(repo, "conduct.json"), JSON.stringify({ setup }));
+    const mgr = await WorkspaceManager.open(repo);
+    return { repo, mgr };
+  }
+
+  function waitFor(
+    mgr: WorkspaceManager,
+    id: string,
+    predicate: (s: WorkspaceStatus) => boolean,
+    timeoutMs = 10000,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        mgr.off("update", onUpdate);
+        reject(new Error(`timeout waiting for ${id}`));
+      }, timeoutMs);
+      const onUpdate = () => {
+        const ws = mgr.get(id);
+        if (ws && predicate(ws.status)) {
+          clearTimeout(timer);
+          mgr.off("update", onUpdate);
+          resolve();
+        }
+      };
+      mgr.on("update", onUpdate);
+      onUpdate();
+    });
+  }
+
+  beforeAll(() => {
+    sTmp = fs.mkdtempSync(path.join(os.tmpdir(), "conduct-setup-test-"));
+    savedHome = process.env.HOME;
+    process.env.HOME = sTmp;
+  });
+
+  afterAll(() => {
+    if (savedHome !== undefined) process.env.HOME = savedHome;
+    try { fs.rmSync(sTmp, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it("runs setup in the worktree before the agent starts", async () => {
+    const { mgr } = await openWith([
+      "echo SETUP_LINE",
+      "printf 'ready\\n' > setup-marker.txt",
+    ]);
+    try {
+      const ws = await mgr.createWorkspace({
+        title: "Setup ok",
+        prompt: "standby",
+        agentId: "mock",
+      });
+      await waitFor(mgr, ws.id, (s) => s === "done" || s === "error");
+      const after = mgr.get(ws.id)!;
+      expect(after.status).toBe("done");
+
+      // The setup marker file the command wrote must exist in the worktree.
+      expect(fs.existsSync(path.join(after.path, "setup-marker.txt"))).toBe(true);
+
+      const transcript = after.output.join("\n");
+      // Setup output is in the transcript, prefixed and bracketing the agent run.
+      expect(transcript).toContain("⚙ setup — running 2 commands");
+      expect(transcript).toContain("⚙ SETUP_LINE");
+      expect(transcript).toContain("⚙ ✓ setup complete");
+      // And the agent did run afterwards (the mock writes this line).
+      expect(transcript).toContain("writing CONDUCT_NOTES.md");
+      // Setup finished, so the transient flag is cleared.
+      expect(after.setupRunning).toBeFalsy();
+    } finally {
+      mgr.shutdown();
+    }
+  }, 20000);
+
+  it("aborts and does not start the agent when a setup command fails", async () => {
+    const { mgr } = await openWith(["exit 7", "echo SHOULD_NOT_RUN"]);
+    try {
+      const ws = await mgr.createWorkspace({
+        title: "Setup fails",
+        prompt: "standby",
+        agentId: "mock",
+      });
+      await waitFor(mgr, ws.id, (s) => s === "error");
+      const after = mgr.get(ws.id)!;
+      expect(after.status).toBe("error");
+      expect(after.error).toBe("setup failed");
+
+      const transcript = after.output.join("\n");
+      expect(transcript).toContain("⚙ ✗ setup failed (exit 7)");
+      // The second setup command and the agent must never have run.
+      expect(transcript).not.toContain("SHOULD_NOT_RUN");
+      expect(transcript).not.toContain("writing CONDUCT_NOTES.md");
+      expect(after.setupRunning).toBeFalsy();
+    } finally {
+      mgr.shutdown();
+    }
+  }, 20000);
+});

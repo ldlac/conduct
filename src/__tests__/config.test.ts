@@ -99,4 +99,27 @@ describe("loadConfig", () => {
     writeConfig({ defaultFanout: 3.9 });
     expect((await loadConfig(tmpDir)).defaultFanout).toBe(3);
   });
+
+  it("normalizes a single-string setup into a one-command list", async () => {
+    writeConfig({ setup: "pnpm install" });
+    expect((await loadConfig(tmpDir)).setup).toEqual(["pnpm install"]);
+  });
+
+  it("keeps a setup array in order, trimming and dropping blank entries", async () => {
+    writeConfig({ setup: ["  pnpm install  ", "", "   ", "cp .env.example .env"] });
+    expect((await loadConfig(tmpDir)).setup).toEqual([
+      "pnpm install",
+      "cp .env.example .env",
+    ]);
+  });
+
+  it("leaves setup unset when nothing valid survives, warning on bad entries", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    writeConfig({ setup: ["", "   "] });
+    expect((await loadConfig(tmpDir)).setup).toBeUndefined();
+    writeConfig({ setup: [5, true] });
+    expect((await loadConfig(tmpDir)).setup).toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
