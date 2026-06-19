@@ -1,4 +1,4 @@
-import { run } from "./git.js";
+import { commandExists } from "./git.js";
 import type {
   AgentBackend,
   AgentQuestion,
@@ -164,13 +164,19 @@ export function splitArgs(s: string | undefined): string[] {
   return args;
 }
 
-/** Cache of `which <bin>` lookups. */
+/** Cache of PATH lookups, keyed by binary name. */
 const availability = new Map<string, boolean>();
 
+/**
+ * Cached, cross-platform "is this CLI on PATH?" check used to populate the agent
+ * registry's availability. Delegates the actual probe to {@link commandExists}
+ * (which picks `which`/`where` per platform) and memoizes the result, since an
+ * agent's presence doesn't change within a session and the picker queries it
+ * repeatedly.
+ */
 async function onPath(bin: string): Promise<boolean> {
   if (availability.has(bin)) return availability.get(bin)!;
-  const res = await run("which", [bin]);
-  const ok = res.code === 0 && res.stdout.trim().length > 0;
+  const ok = await commandExists(bin);
   availability.set(bin, ok);
   return ok;
 }

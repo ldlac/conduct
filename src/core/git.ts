@@ -19,6 +19,13 @@ export interface MergeResult {
   conflicts?: string[];
 }
 
+/**
+ * Grace period after a timeout's SIGTERM before escalating to SIGKILL. A wedged
+ * process (e.g. a network `git push`/`gh pr create` stuck on a dead socket) can
+ * ignore SIGTERM; without a follow-up kill it would linger after `run` resolves.
+ */
+const KILL_GRACE_MS = 2_000;
+
 /** Run a command, capturing output. Never rejects on non-zero exit. */
 export function run(
   cmd: string,
@@ -35,19 +42,29 @@ export function run(
     let stderr = "";
     child.stdout?.on("data", (d) => (stdout += d.toString()));
     child.stderr?.on("data", (d) => (stderr += d.toString()));
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     const timer =
       timeoutMs && timeoutMs > 0
         ? setTimeout(() => {
             child.kill("SIGTERM");
+            // Escalate to SIGKILL if SIGTERM didn't take, so a hung subprocess
+            // doesn't outlive the resolved promise. `unref` keeps this grace
+            // timer from holding the event loop open on its own.
+            killTimer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+            killTimer.unref?.();
             resolve({ code: 124, stdout, stderr: `${stderr}\n[timed out after ${timeoutMs}ms]`.trim() });
           }, timeoutMs)
         : undefined;
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolve({ code: 127, stdout, stderr: stderr + String(err) });
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      // The process exited (possibly because SIGTERM worked), so the pending
+      // SIGKILL is moot — clear it.
+      if (killTimer) clearTimeout(killTimer);
       resolve({ code: code ?? 0, stdout, stderr });
     });
   });
@@ -63,9 +80,15 @@ const GIT_LONG_TIMEOUT = 120_000;
  * registry's own lookup) and dependency-free, so callers like the
  * push/pull-request flow can probe for an optional CLI (`gh`) at the moment they
  * need it without coupling to the agents module.
+ *
+ * Cross-platform: POSIX has `which`, but Windows ships `where` instead (and no
+ * `which`), so on `win32` we probe with `where`. Without this, every agent and
+ * the `gh`/PR flow would report "not installed" on the published Windows build,
+ * leaving the app with no usable agents.
  */
 export async function commandExists(bin: string): Promise<boolean> {
-  const res = await run("which", [bin]);
+  const finder = process.platform === "win32" ? "where" : "which";
+  const res = await run(finder, [bin]);
   return res.code === 0 && res.stdout.trim().length > 0;
 }
 
