@@ -272,6 +272,78 @@ describe("Git instance methods", () => {
       git.merge("nonexistent-branch", "bad merge"),
     ).rejects.toThrow("git merge");
   });
+
+  it("isAncestor reflects whether a ref already contains another", async () => {
+    const base = await git.currentBranch();
+    const startSha = await git.headSha();
+    const branch = "conduct/anc-test";
+    await exec("git", ["branch", branch, startSha], repoDir);
+    // Same commit: base is (trivially) an ancestor of the fresh branch.
+    expect(await git.isAncestor(base, branch, repoDir)).toBe(true);
+
+    // Advance base; now base is no longer contained in the un-moved branch.
+    fs.writeFileSync(path.join(repoDir, "anc.txt"), "anc\n");
+    await exec("git", ["add", "anc.txt"], repoDir);
+    await exec("git", ["commit", "-m", "anc advance", "--no-verify"], repoDir);
+    expect(await git.isAncestor(base, branch, repoDir)).toBe(false);
+    // …but the branch is still an ancestor of the advanced base.
+    expect(await git.isAncestor(branch, base, repoDir)).toBe(true);
+
+    expect(await git.isAncestor("no-such-ref", branch, repoDir)).toBe(false);
+
+    await exec("git", ["branch", "-D", branch], repoDir);
+    await exec("git", ["reset", "--hard", startSha], repoDir);
+  }, 15000);
+
+  it("mergeInto brings base commits into a worktree branch (clean)", async () => {
+    const base = await git.currentBranch();
+    const startSha = await git.headSha();
+    const branch = "conduct/merge-into-clean";
+    const wt = path.join(tmpDir, "wt-merge-into-clean");
+    await git.addWorktree(wt, branch, startSha);
+
+    // Advance base with a file the worktree branch doesn't have yet.
+    fs.writeFileSync(path.join(repoDir, "base-new.txt"), "from base\n");
+    await exec("git", ["add", "base-new.txt"], repoDir);
+    await exec("git", ["commit", "-m", "base advance", "--no-verify"], repoDir);
+    expect(fs.existsSync(path.join(wt, "base-new.txt"))).toBe(false);
+
+    const result = await git.mergeInto(wt, base, `Merge ${base}`);
+    expect(result.ok).toBe(true);
+    // The base file is now present in the worktree (fast-forwarded in).
+    expect(fs.existsSync(path.join(wt, "base-new.txt"))).toBe(true);
+
+    await git.removeWorktree(wt);
+    await git.deleteBranch(branch);
+    await exec("git", ["reset", "--hard", startSha], repoDir);
+  }, 15000);
+
+  it("mergeInto rolls back and reports conflicts", async () => {
+    const base = await git.currentBranch();
+    const startSha = await git.headSha();
+    const branch = "conduct/merge-into-conflict";
+    const wt = path.join(tmpDir, "wt-merge-into-conflict");
+    await git.addWorktree(wt, branch, startSha);
+
+    // Base and the worktree branch change the same file in different ways.
+    fs.writeFileSync(path.join(repoDir, "shared.txt"), "base side\n");
+    await exec("git", ["add", "shared.txt"], repoDir);
+    await exec("git", ["commit", "-m", "base shared", "--no-verify"], repoDir);
+    fs.writeFileSync(path.join(wt, "shared.txt"), "branch side\n");
+    await exec("git", ["add", "shared.txt"], wt);
+    await exec("git", ["commit", "-m", "branch shared", "--no-verify"], wt);
+
+    const result = await git.mergeInto(wt, base, `Merge ${base}`);
+    expect(result.ok).toBe(false);
+    expect(result.conflicts).toContain("shared.txt");
+    // Rolled back: the worktree carries no in-progress merge.
+    const status = await execAndCapture("git", ["status", "--porcelain"], wt);
+    expect(status.trim()).toBe("");
+
+    await git.removeWorktree(wt);
+    await git.deleteBranch(branch);
+    await exec("git", ["reset", "--hard", startSha], repoDir);
+  }, 15000);
 });
 
 describe("commandExists", () => {

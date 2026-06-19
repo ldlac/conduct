@@ -377,6 +377,38 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     [manager, flash],
   );
 
+  const doSync = useCallback(
+    async (ws: Workspace | undefined) => {
+      if (!ws) return;
+      const base = manager.baseBranch;
+      flash(`syncing ${ws.title} with ${base}…`);
+      try {
+        const result = await manager.syncWithBase(ws.id);
+        if (result.ok) {
+          flash(
+            result.upToDate
+              ? `${ws.title} already up to date with ${base}`
+              : `synced ${ws.title} with ${base}`,
+          );
+          // The merge changed the worktree, so a diff on screen is now stale.
+          if (view === "diff") loadDiff(ws);
+        } else if (result.conflicts && result.conflicts.length > 0) {
+          const files = result.conflicts;
+          const shown = files.slice(0, 3).join(", ");
+          const more = files.length > 3 ? ` +${files.length - 3} more` : "";
+          flash(
+            `sync conflict in ${files.length} file${files.length === 1 ? "" : "s"} (${shown}${more}) — ${ws.title} left unchanged; merge ${base} in the worktree (c) to resolve`,
+          );
+        } else {
+          flash(`sync failed: ${result.error ?? "unknown error"}`);
+        }
+      } catch (err) {
+        flash(`sync failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [manager, flash, view, loadDiff],
+  );
+
   const sendReply = useCallback(
     (ws: Workspace | undefined, text: string) => {
       setComposing(false);
@@ -642,6 +674,36 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     flash(`restarted ${count} of ${targets.length} marked`);
   }, [manager, flash, ordered, markedIds, clearMarks]);
 
+  const doSyncMany = useCallback(async () => {
+    const targets = ordered.filter((w) => markedIds.includes(w.id));
+    if (targets.length === 0) {
+      flash("no marked workspaces");
+      return;
+    }
+    let synced = 0;
+    let conflicted = 0;
+    let skipped = 0;
+    for (const ws of targets) {
+      // A workspace still working isn't safe to rewrite under; merged/archived
+      // ones have nothing in flight. Skip both rather than failing the batch.
+      if (ws.status === "running" || ws.status === "creating") {
+        skipped++;
+        continue;
+      }
+      try {
+        const result = await manager.syncWithBase(ws.id);
+        if (result.ok) synced++;
+        else conflicted++;
+      } catch {
+        conflicted++;
+      }
+    }
+    clearMarks();
+    flash(
+      `synced ${synced}, ${conflicted} conflicted/failed${skipped ? `, ${skipped} skipped` : ""} of ${targets.length} marked`,
+    );
+  }, [manager, flash, ordered, markedIds, clearMarks]);
+
   const doStopAllRunning = useCallback(() => {
     const running = items.filter((w) => w.status === "running" || w.status === "creating");
     let count = 0;
@@ -753,8 +815,8 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
     switchWorkspace, openCommand,
-    doMerge, doPushPr, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove, doPruneSiblings,
-    doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doBroadcast,
+    doMerge, doPushPr, doRestart, doSync, doArchive: doArchiveWithConfirm, doClone, doAutoImprove, doPruneSiblings,
+    doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doSyncMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,
     flash, setMessage, setSelectedId,

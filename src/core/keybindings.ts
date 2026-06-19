@@ -34,6 +34,7 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "s", description: "stop the running agent", category: "actions" },
   { keys: "S", description: "ask the agent to turn its work into a skill", category: "actions" },
   { keys: "R", description: "restart the agent (selected or all marked)", category: "actions" },
+  { keys: "u", description: "sync with base — merge the base branch in to catch up (selected or all marked)", category: "actions" },
   { keys: "x", description: "archive (selected or all marked)", category: "actions" },
   { keys: "y / n", description: "allow / deny a pending permission request", category: "actions" },
   { keys: "Alt+a", description: "archive all merged workspaces", category: "actions" },
@@ -74,7 +75,7 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · w winner · c shell · ! run cmd · m merge · P push/PR · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · w winner · c shell · ! run cmd · m merge · u sync · P push/PR · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",

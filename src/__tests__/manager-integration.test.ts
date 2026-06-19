@@ -508,6 +508,46 @@ describe("WorkspaceManager integration", () => {
     expect((manager.get(ws.id)!.shellOutput ?? []).join("\n")).toContain("after-stop");
   }, 20000);
 
+  it("syncs a workspace with an advanced base branch, then reports up to date", async () => {
+    const ws = await manager.createWorkspace({
+      title: "Sync test",
+      prompt: "standby",
+      agentId: "mock",
+    });
+    await waitForStatus(ws.id, (s) => s === "done" || s === "error");
+    // The mock stays alive between turns; stop it so the sync's own stop() is a
+    // no-op and the worktree is settled before we merge into it.
+    if (manager.isRunning(ws.id)) {
+      manager.stop(ws.id);
+      await waitForNotRunning(ws.id);
+    }
+
+    // Advance the base branch with a commit the workspace doesn't have yet.
+    fs.writeFileSync(path.join(repoDir, "base-feature.txt"), "base feature\n");
+    await exec("git", ["add", "base-feature.txt"], repoDir);
+    await exec("git", ["commit", "-m", "advance base", "--no-verify"], repoDir);
+
+    const wsPath = manager.get(ws.id)!.path;
+    expect(fs.existsSync(path.join(wsPath, "base-feature.txt"))).toBe(false);
+
+    const result = await manager.syncWithBase(ws.id);
+    expect(result.ok).toBe(true);
+    expect(result.upToDate).toBeFalsy();
+    // The base commit is now present in the workspace's worktree.
+    expect(fs.existsSync(path.join(wsPath, "base-feature.txt"))).toBe(true);
+
+    // Syncing again is a no-op: base hasn't moved since.
+    const again = await manager.syncWithBase(ws.id);
+    expect(again.ok).toBe(true);
+    expect(again.upToDate).toBe(true);
+  }, 20000);
+
+  it("syncWithBase throws for an unknown workspace", async () => {
+    await expect(manager.syncWithBase("does-not-exist")).rejects.toThrow(
+      "No such workspace",
+    );
+  });
+
   it("shutdown kills processes and does not throw", async () => {
     const ws = await manager.createWorkspace({
       title: "Shutdown test",
