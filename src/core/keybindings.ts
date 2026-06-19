@@ -73,7 +73,7 @@ export function keybindingsByCategory(): [string, Keybinding[]][] {
 }
 
 export const MODE_HINTS: Record<string, string> = {
-  list: "n new · Space mark · Ctrl+a mark all · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · ! run cmd · m merge · P push/PR · s stop · x archive · ? help · q quit",
+  list: "n new · Space mark · ↑/↓ select · ↵ open · d diff · / filter · e rename · A auto · C clone · c shell · ! run cmd · m merge · P push/PR · s stop · x archive · ? help · q quit",
   detail:
     "↵/o output · d diff · ! run cmd · [/] files · f file list · Tab next ws · / search · i reply · ↑/↓ scroll · n/N matches · ? help · esc back",
   new: "fill the form · esc cancel",
