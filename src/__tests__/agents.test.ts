@@ -96,10 +96,13 @@ describe("mock agent", () => {
   });
 
   describe("buildCommand", () => {
-    it("returns a bash script", () => {
+    it("runs a Node script so it's cross-platform", () => {
       const cmd = mock.buildCommand("test prompt");
-      expect(cmd.cmd).toBe("bash");
-      expect(cmd.args[0]).toBe("-c");
+      // Uses the same Node binary running conduct (no bash dependency, so it
+      // works on Windows too) with an inline `-e` script.
+      expect(cmd.cmd).toBe(process.execPath);
+      expect(cmd.args[0]).toBe("-e");
+      expect(cmd.args[1]).toContain("CONDUCT_NOTES.md");
     });
   });
 

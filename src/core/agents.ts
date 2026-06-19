@@ -486,18 +486,30 @@ const mock: AgentBackend = {
   displayName: "Mock (test runner)",
   isAvailable: async () => true,
   buildCommand() {
+    // Run on Node rather than a shell so the mock works identically on every
+    // platform (Windows has no bash). `process.execPath` is the same Node binary
+    // already running conduct, so it's guaranteed present without a PATH lookup.
+    // The script writes a file (so there's a diff to review), then reads stdin
+    // line by line, echoing each reply and ending the turn with a sentinel that
+    // records whether the message was a question — so the manager only marks the
+    // workspace as awaiting input when it was. The worktree is the cwd, so the
+    // relative CONDUCT_NOTES.md lands inside it.
     const script = [
-      'echo "writing CONDUCT_NOTES.md"',
-      "printf '# Conduct\\n' > CONDUCT_NOTES.md",
-      // Read the initial prompt, then loop on follow-up replies. End each turn
-      // with a sentinel that records whether the message was a question, so the
-      // manager only marks the workspace as awaiting input when it was.
-      'while IFS= read -r line; do echo "you said: $line"; printf "%s\\n" "$line" >> CONDUCT_NOTES.md; case "$line" in *\\?) echo "@@await@@";; *) echo "@@done@@";; esac; done',
-    ].join(" && ");
-    return { cmd: "bash", args: ["-c", script] };
+      'const fs = require("fs");',
+      'fs.writeFileSync("CONDUCT_NOTES.md", "# Conduct\\n");',
+      'console.log("writing CONDUCT_NOTES.md");',
+      'require("readline").createInterface({ input: process.stdin })',
+      '  .on("line", (line) => {',
+      '    console.log("you said: " + line);',
+      '    fs.appendFileSync("CONDUCT_NOTES.md", line + "\\n");',
+      '    console.log(/\\?$/.test(line) ? "@@await@@" : "@@done@@");',
+      "  });",
+    ].join("\n");
+    return { cmd: process.execPath, args: ["-e", script] };
   },
   encodeInput(text) {
-    // Bash `read` is line-oriented, so collapse newlines into spaces.
+    // `readline` is line-oriented, so collapse newlines into spaces and end with
+    // a single newline to deliver the reply as one line.
     return text.replace(/\r?\n/g, " ") + "\n";
   },
   awaitsReply(line) {

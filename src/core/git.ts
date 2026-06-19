@@ -189,7 +189,7 @@ export class Git {
     let files = 0;
     let insertions = 0;
     let deletions = 0;
-    for (const line of out.split("\n")) {
+    for (const line of out.split(/\r?\n/)) {
       if (!line.trim()) continue;
       const [added, deleted] = line.split("\t");
       files += 1;

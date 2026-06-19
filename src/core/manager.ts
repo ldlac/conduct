@@ -6,6 +6,7 @@ import os from "node:os";
 import fs from "node:fs/promises";
 
 import { Git, commandExists, run, type MergeResult } from "./git.js";
+import { shellInvocation } from "./platform.js";
 import { getAgent } from "./agents.js";
 import { loadState, saveState, saveStateSync } from "./store.js";
 import type {
@@ -274,7 +275,9 @@ export class WorkspaceManager extends EventEmitter {
   }
 
   private append(ws: Workspace, text: string): void {
-    for (const line of text.split("\n")) ws.output.push(line);
+    // Split on both LF and CRLF: child processes on Windows can emit `\r\n`, and
+    // a stray trailing `\r` would render as a control glyph in the output pane.
+    for (const line of text.split(/\r?\n/)) ws.output.push(line);
     if (ws.output.length > MAX_OUTPUT_LINES) {
       ws.output.splice(0, ws.output.length - MAX_OUTPUT_LINES);
     }
@@ -289,7 +292,7 @@ export class WorkspaceManager extends EventEmitter {
    */
   private appendShell(ws: Workspace, text: string): void {
     if (!ws.shellOutput) ws.shellOutput = [];
-    for (const line of text.split("\n")) ws.shellOutput.push(line);
+    for (const line of text.split(/\r?\n/)) ws.shellOutput.push(line);
     if (ws.shellOutput.length > MAX_OUTPUT_LINES) {
       ws.shellOutput.splice(0, ws.shellOutput.length - MAX_OUTPUT_LINES);
     }
@@ -399,18 +402,18 @@ export class WorkspaceManager extends EventEmitter {
    * Spawn one setup command in the worktree and stream its output, resolving
    * with the exit code (non-zero on spawn failure, so the caller treats an
    * un-launchable command as a failed step). Mirrors {@link runCommand}'s shell
-   * invocation — `$SHELL -c` with `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE` and the
-   * config `env` exported — so setup sees the same environment as both the
-   * in-app runner and the agent.
+   * invocation — the OS shell via {@link shellInvocation} with
+   * `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE` and the config `env` exported — so
+   * setup sees the same environment as both the in-app runner and the agent.
    */
   private runSetupCommand(ws: Workspace, command: string): Promise<number> {
     return new Promise((resolve) => {
-      const shell = process.env.SHELL || "/bin/bash";
+      const { cmd, args } = shellInvocation(command);
       const cfgEnv: NodeJS.ProcessEnv = {};
       if (this.config.env) Object.assign(cfgEnv, this.config.env);
       let child: ChildProcess;
       try {
-        child = spawn(shell, ["-c", command], {
+        child = spawn(cmd, args, {
           cwd: ws.path,
           env: {
             ...process.env,
@@ -855,10 +858,11 @@ export class WorkspaceManager extends EventEmitter {
    * into the workspace's separate command buffer (see {@link Workspace.shellOutput}).
    * This is the in-app counterpart to jumping into a full interactive shell with
    * `c`: a quick `pnpm test` / `git status` / `ls` against the worktree without
-   * leaving conduct or tearing down the TUI. The command runs through the user's
-   * shell with `-c` (so pipes, globs, and `&&` work and the inherited PATH/env
-   * apply) with the worktree as its cwd and `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE`
-   * exported, exactly like the interactive shell.
+   * leaving conduct or tearing down the TUI. The command runs through the OS
+   * shell (see {@link shellInvocation}, so pipes, globs, and `&&` work and the
+   * inherited PATH/env apply) with the worktree as its cwd and
+   * `CONDUCT_WORKSPACE`/`CONDUCT_WORKTREE` exported, exactly like the
+   * interactive shell.
    *
    * Only one runner command runs per workspace at a time, so its output stays
    * legible and isn't interleaved with another's; a second call while one is
@@ -872,14 +876,14 @@ export class WorkspaceManager extends EventEmitter {
     if (!ws?.path || !trimmed) return false;
     if (this.shellProcs.has(id)) return false;
 
-    const shell = process.env.SHELL || "/bin/bash";
+    const { cmd, args } = shellInvocation(trimmed);
     this.appendShell(ws, `$ ${trimmed}`);
     ws.shellRunning = true;
     this.touch();
 
     let child: ChildProcess;
     try {
-      child = spawn(shell, ["-c", trimmed], {
+      child = spawn(cmd, args, {
         cwd: ws.path,
         env: {
           ...process.env,
