@@ -515,6 +515,37 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     }
   }, [manager, flash, agents]);
 
+  // Pick the winner of a fan-out: keep the selected attempt and archive the
+  // other attempts of the same race (see manager.groupSiblings), the one-step
+  // version of the documented "merge whichever came out best, then archive the
+  // rest." The kept workspace is left untouched — merge/push/review it however
+  // you like — so this composes with `m`/`P` in either order rather than
+  // bundling a merge in. Confirmed first, since it stops agents and removes
+  // worktrees and branches.
+  const doPruneSiblings = useCallback(
+    (ws: Workspace | undefined) => {
+      if (!ws) return;
+      const siblings = manager.groupSiblings(ws.id);
+      if (siblings.length === 0) {
+        flash("not part of a fan-out — no other attempts to archive");
+        return;
+      }
+      const n = siblings.length;
+      confirmThen(
+        `Keep "${ws.title}" and archive its ${n} other attempt${n === 1 ? "" : "s"} from this fan-out? Each is stopped and its worktree and branch removed.`,
+        async () => {
+          for (const sib of siblings) await manager.archive(sib.id);
+          // The kept attempt isn't touched, so keep it selected.
+          setSelectedId(ws.id);
+          flash(
+            `archived ${n} other attempt${n === 1 ? "" : "s"}, kept ${ws.title}`,
+          );
+        },
+      );
+    },
+    [manager, flash, confirmThen, setSelectedId],
+  );
+
   const doArchive = useCallback(
     async (ws: Workspace | undefined) => {
       if (!ws) return;
@@ -722,7 +753,7 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     searchResults, maxScroll, topNow,
     diffFileIndex, setDiffFileIndex, diffFiles,
     switchWorkspace, openCommand,
-    doMerge, doPushPr, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove,
+    doMerge, doPushPr, doRestart, doArchive: doArchiveWithConfirm, doClone, doAutoImprove, doPruneSiblings,
     doMergeMany, doArchiveMany: doArchiveManyWithConfirm, doRestartMany, doBroadcast,
     doStopAllRunning: doStopAllRunningWithConfirm, doArchiveAllMerged: doArchiveAllMergedWithConfirm, doRestartAllStopped,
     sendReply, loadDiff,
