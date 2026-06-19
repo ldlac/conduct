@@ -344,7 +344,7 @@ export function DetailPane({
               : "— shell —"
             : followTail
               ? "— output —"
-              : "— output (paused) —"}
+              : "— output 🔒 —"}
         {diffFilePath && diffFileCount && diffFileCount > 1 ? (
           <Text>
             {" "}[{diffFileIndex != null ? diffFileIndex + 1 : 1}/{diffFileCount}]{" "}
