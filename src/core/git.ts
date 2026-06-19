@@ -256,6 +256,72 @@ export class Git {
     return { ok: false, conflicts };
   }
 
+  /**
+   * Whether `ancestor` is contained in `ref`'s history — i.e. `ref` already has
+   * every commit of `ancestor`. Run in `cwd` so it can be asked of a worktree's
+   * checked-out branch (pass `"HEAD"` as `ref`). The sync flow uses it to tell
+   * "already up to date with base" from "base has moved on" without parsing
+   * merge output. A non-zero exit (not an ancestor, or an unknown ref) is just
+   * `false`.
+   */
+  async isAncestor(ancestor: string, ref: string, cwd: string): Promise<boolean> {
+    const res = await run(
+      "git",
+      ["merge-base", "--is-ancestor", ancestor, ref],
+      cwd,
+    );
+    return res.code === 0;
+  }
+
+  /**
+   * Merge `baseRef` *into* a worktree's currently checked-out branch — the
+   * inverse direction of {@link merge}. Used to bring base-branch progress into
+   * an in-flight workspace so its diff reflects only its own changes and a later
+   * merge-back stays clean. Runs inside the worktree (`worktree` is its cwd), so
+   * the merge lands on the workspace branch rather than the base checkout, and a
+   * pure catch-up (the branch has no commits of its own past base) fast-forwards
+   * with no empty merge commit.
+   *
+   * Mirrors {@link merge}'s conflict handling: a clean merge returns
+   * `{ ok: true }`; on conflict the half-finished merge is rolled back with
+   * `git merge --abort` so the worktree is restored exactly as it was — never
+   * stranded with conflict markers and `MERGE_HEAD` set — and the unmerged paths
+   * are returned for the caller to surface. Any other failure (e.g. a tree git
+   * refuses to merge over) throws, since it isn't a conflict to resolve.
+   */
+  async mergeInto(
+    worktree: string,
+    baseRef: string,
+    message: string,
+  ): Promise<MergeResult> {
+    const res = await run(
+      "git",
+      ["merge", "-m", message, baseRef],
+      worktree,
+      GIT_LONG_TIMEOUT,
+    );
+    if (res.code === 0) return { ok: true };
+    const unmerged = await run(
+      "git",
+      ["diff", "--name-only", "--diff-filter=U"],
+      worktree,
+    );
+    const conflicts = unmerged.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (conflicts.length === 0) {
+      throw new Error(
+        `git merge ${baseRef} failed (${res.code}): ${res.stderr.trim() || res.stdout.trim()}`,
+      );
+    }
+    // Roll the conflicted merge back so the worktree is left untouched. Best
+    // effort: if the abort itself fails there's nothing more to do here, and the
+    // returned conflicts still tell the user what happened.
+    await run("git", ["merge", "--abort"], worktree);
+    return { ok: false, conflicts };
+  }
+
   /** True if `remote` is configured for this repo (i.e. has a URL). */
   async hasRemote(remote = "origin"): Promise<boolean> {
     const res = await run("git", ["remote", "get-url", remote], this.root);

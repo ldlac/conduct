@@ -89,6 +89,7 @@ operations. Each marked workspace shows a `●` indicator in the list. With mark
 active:
 
 - `m` merges every marked workspace that is ready to review (status `done` or `stopped`)
+- `u` syncs every marked workspace with the base branch (skips ones still running)
 - `x` archives every marked workspace (stops the agent, removes the worktree and branch)
 - `R` restarts every marked workspace
 - `i` broadcasts a follow-up message to every marked agent at once
@@ -186,6 +187,7 @@ pnpm start ../my-repo   # or point at another repo
 | `c`                | jump into a shell in the workspace's worktree  |
 | `!`                | run a one-off command in the worktree (output streams in the shell view) |
 | `m`                | merge (selected, or all marked when marks exist) |
+| `u`                | sync with base — merge the base branch in (selected, or all marked) |
 | `P`                | push the branch and open a pull request (`gh`) |
 | `s`                | stop the running agent                         |
 | `S`                | ask the agent to turn its work into a skill    |
@@ -211,6 +213,7 @@ pnpm start ../my-repo   # or point at another repo
 | `e`                | rename the workspace title        |
 | `C`                | clone — re-run this prompt fresh  |
 | `w`                | pick winner — archive the rest of this fan-out |
+| `u`                | sync with base — merge the base branch in to catch up |
 | `P`                | push the branch and open a pull request (`gh`) |
 | `y` / `n`          | allow / deny a permission request |
 | `S`                | ask the agent to build a skill    |
@@ -399,6 +402,29 @@ straight back (`git merge --abort`) so your base checkout is never left stranded
 mid-merge, flags the workspace with a red `⚠`, and lists the conflicting files
 in the detail pane. Resolve them by jumping into the worktree (`c`), then press
 `m` again to retry.
+
+## Syncing with the base branch
+
+Merging the winner of a race moves your base branch forward, which quietly
+strands every other workspace you still have in flight: each was branched off the
+*old* base, so its diff now overstates what it actually changed (folding in work
+you already merged via a sibling) and merging it back later risks avoidable
+conflicts. Press `u` to **sync** a workspace with the base branch: conduct
+auto-commits any pending work, then merges the base branch *into* that
+workspace's branch — inside its own worktree, so your base checkout is never
+touched. The workspace now sits on top of current base, its diff reflects only
+its own changes again, and the eventual merge-back stays clean.
+
+The common flow is: merge the winner (`m`), then mark the workspaces you want to
+carry forward (`Space`) and press `u` to bring them all up to date in one step
+(workspaces still running are skipped). A workspace already current with base
+reports "already up to date" and nothing is merged.
+
+If the sync conflicts, conduct rolls it straight back (`git merge --abort`) so
+the workspace is left exactly as it was — never stranded mid-merge — and tells
+you which files clashed. Resolve a conflicting sync by hand in the worktree (`c`,
+then `git merge <base>`), or simply keep working in the workspace and let the
+merge-back surface the conflict instead.
 
 ## Pushing and pull requests
 

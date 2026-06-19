@@ -98,6 +98,26 @@ export interface PrResult {
   error?: string;
 }
 
+/**
+ * Outcome of syncing a workspace with the base branch (see
+ * {@link WorkspaceManager.syncWithBase}). The clean case sets `ok`; a conflict
+ * is reported with the unmerged paths (the workspace is left untouched, having
+ * been rolled back); `upToDate` distinguishes "nothing to do, base hasn't moved"
+ * from an actual merge so the UI can say so rather than implying work happened.
+ */
+export interface SyncResult {
+  /** True when the base merged cleanly into the workspace (or there was nothing to merge). */
+  ok: boolean;
+  /** Base carried no commits the workspace lacked, so no merge was attempted. */
+  upToDate?: boolean;
+  /** Whether pending agent work was committed before the merge (false if the tree was clean). */
+  committed?: boolean;
+  /** Paths that conflicted, set only when `ok` is false and it was a conflict (not a hard error). */
+  conflicts?: string[];
+  /** Human-readable failure reason for a non-conflict failure. */
+  error?: string;
+}
+
 /** Timeout for the `gh pr create` invocation, which talks to GitHub over the network. */
 const GH_TIMEOUT_MS = 120_000;
 
@@ -1098,6 +1118,80 @@ export class WorkspaceManager extends EventEmitter {
     ws.status = "merged";
     this.touch();
     return result;
+  }
+
+  /**
+   * Bring the base branch's latest commits *into* a workspace's branch — the
+   * "catch up to base" move you reach for after merging one attempt so the
+   * others build on it rather than drifting. Without it, every workspace created
+   * before a merge keeps diffing against the old base: its diff overstates what
+   * it changed (folding in work already merged via a sibling) and a later
+   * merge-back risks avoidable conflicts. Syncing rebuilds the workspace on top
+   * of current base so its diff is honest and the merge-back stays clean.
+   *
+   * Commits any pending agent work first (so it survives the merge and the tree
+   * is clean enough for git to merge over), then merges {@link baseBranch} into
+   * the workspace's branch *inside its own worktree* — the base checkout is never
+   * touched (contrast {@link merge}, which merges the other direction). Returns a
+   * {@link SyncResult}:
+   *
+   * - base hasn't moved since the branch last saw it → `{ ok, upToDate }`, no merge;
+   * - clean merge → `{ ok, committed }`, the diff badge refreshed and any stale
+   *   merge-conflict list cleared;
+   * - conflict → `{ ok: false, conflicts }` with the merge already rolled back, so
+   *   the workspace is unchanged and the user can resolve it by hand in the
+   *   worktree (`c`) and retry.
+   *
+   * Refuses while the agent is mid-turn (the tree isn't settled) and for a
+   * merged/archived workspace (nothing in flight to update). Any idle session is
+   * shut down first, like {@link merge}, so no agent keeps running against a tree
+   * we're rewriting under it.
+   */
+  async syncWithBase(id: string): Promise<SyncResult> {
+    const ws = this.workspaces.get(id);
+    if (!ws) throw new Error("No such workspace");
+    if (ws.status === "running")
+      throw new Error("Agent is still working — wait for it to finish or stop it");
+    if (ws.status === "merged" || ws.status === "archived")
+      return { ok: false, error: `cannot sync a ${ws.status} workspace` };
+    if (!ws.path || !(await pathExists(ws.path)))
+      return { ok: false, error: "workspace has no worktree to sync" };
+    if (this.isRunning(id)) this.stop(id);
+
+    // Base already contained in this branch's history → nothing to pull in.
+    // Uncommitted agent work doesn't change HEAD, so this is an honest test of
+    // whether base has moved, independent of pending edits.
+    if (await this.git.isAncestor(this.baseBranch, "HEAD", ws.path)) {
+      return { ok: true, upToDate: true };
+    }
+
+    let committed = false;
+    try {
+      committed = await this.git.commitAll(
+        ws.path,
+        buildCommitMessage(ws.title, ws.summary),
+      );
+      const result = await this.git.mergeInto(
+        ws.path,
+        this.baseBranch,
+        `Merge ${this.baseBranch} into ${ws.branch}`,
+      );
+      if (!result.ok) {
+        return { ok: false, committed, conflicts: result.conflicts };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        committed,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    // The merge brought base in, so any conflict list from an earlier merge-back
+    // attempt against the old base is now stale.
+    ws.conflicts = undefined;
+    await this.refreshStat(ws);
+    this.touch();
+    return { ok: true, committed };
   }
 
   /**

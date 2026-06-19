@@ -77,6 +77,7 @@ export interface HandlerState {
   doMerge: (ws: Workspace | undefined) => void;
   doPushPr: (ws: Workspace | undefined) => void;
   doRestart: (ws: Workspace | undefined) => void;
+  doSync: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
   doAutoImprove: (agentId?: string, focus?: AutoImproveFocus, count?: number) => void;
@@ -84,6 +85,7 @@ export interface HandlerState {
   doMergeMany: () => void;
   doArchiveMany: () => void;
   doRestartMany: () => void;
+  doSyncMany: () => void;
   doStopAllRunning: () => void;
   doArchiveAllMerged: () => void;
   doRestartAllStopped: () => void;
@@ -256,6 +258,14 @@ export function useConductKeys(s: HandlerState): void {
         if (input === "R") {
           if (s.hasMarks) s.doRestartMany();
           else s.doRestart(s.current);
+          return;
+        }
+        // `u` — update: merge the base branch into the workspace so it catches up
+        // to base (e.g. after merging a sibling). Operates on every marked
+        // workspace when marks exist, else the selected one (like m / R / x).
+        if (input === "u") {
+          if (s.hasMarks) s.doSyncMany();
+          else s.doSync(s.current);
           return;
         }
         if (input === "c") {
