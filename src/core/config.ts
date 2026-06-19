@@ -16,6 +16,23 @@ export interface ConductConfig {
    */
   env?: Record<string, string>;
   /**
+   * Shell command(s) to run in each freshly created worktree *before* the agent
+   * starts — the way to ready an environment the agent needs but git doesn't
+   * track: `pnpm install`, copying a `.env`, generating code, priming a build.
+   * Each conduct worktree is a clean checkout with no `node_modules`, secrets,
+   * or build artifacts, so without this an agent (especially an all-perms one
+   * that runs tests/builds) lands in a half-broken tree.
+   *
+   * Accepts a single string or an array; the loader normalizes either into a
+   * list of commands run sequentially, each through `$SHELL -c` in the worktree
+   * (so pipes, globs, and `&&` work). The first command to exit non-zero aborts
+   * the rest and the agent is not started — the workspace lands in `error` with
+   * the setup output in its transcript. Not re-run on {@link
+   * manager.WorkspaceManager.restart} (the worktree, and thus setup's effects,
+   * are reused as-is).
+   */
+  setup?: string[];
+  /**
    * Per-agent overrides. The key is the AgentBackend id.
    */
   agents?: Record<string, AgentConfig>;
@@ -76,6 +93,23 @@ function normalizeConfig(
     } else {
       warn("env must be an object of strings");
     }
+  }
+
+  if (parsed.setup !== undefined) {
+    // Accept a bare string (one command) or an array of strings (several, run
+    // in order). Trim and drop blanks so a stray empty entry never spawns an
+    // empty shell; if nothing valid survives, leave `setup` unset entirely.
+    const raw = Array.isArray(parsed.setup) ? parsed.setup : [parsed.setup];
+    const cmds: string[] = [];
+    for (const entry of raw) {
+      if (typeof entry === "string") {
+        const trimmed = entry.trim();
+        if (trimmed) cmds.push(trimmed);
+      } else {
+        warn("setup entries must be strings");
+      }
+    }
+    if (cmds.length > 0) cfg.setup = cmds;
   }
 
   if (parsed.agents !== undefined) {

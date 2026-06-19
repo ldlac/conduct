@@ -317,6 +317,7 @@ per-repo defaults. Every field is optional, and an invalid value is ignored
 {
   "defaultAgent": "claude",
   "defaultFanout": 3,
+  "setup": ["pnpm install", "cp .env.example .env"],
   "env": { "CONDUCT_CLAUDE_ARGS": "--model claude-opus-4-8" },
   "agents": {
     "opencode": { "args": "--model anthropic/claude-opus-4-8" }
@@ -329,9 +330,33 @@ per-repo defaults. Every field is optional, and an invalid value is ignored
   `opencode`, `opencode-all`, or `mock`). If the named agent isn't installed,
   the picker just starts on the first available one.
 - `defaultFanout` (1 to 8) prefills the "how many parallel workspaces" prompt.
+- `setup` runs in each new worktree before the agent starts (see "Setup
+  commands" below). A single string or an array of commands.
 - `env` injects extra environment variables into every agent process.
 - `agents.<id>.args` appends extra CLI flags for a specific agent, the file
   equivalent of the `CONDUCT_<AGENT>_ARGS` env vars above.
+
+### Setup commands
+
+Each workspace is a clean git worktree, so anything git doesn't track —
+`node_modules`, a local `.env`, generated code, a primed build — is missing from
+it. An agent that can run commands (the all-perms variants, or one you've
+allowlisted) then lands in a half-broken tree: `pnpm test` fails because nothing
+is installed.
+
+Set `setup` in `conduct.json` to ready the worktree first. conduct runs the
+command(s) in the new worktree before spawning the agent, through your `$SHELL`
+with `-c` (so pipes, globs, and `&&` work) and with `CONDUCT_WORKSPACE` /
+`CONDUCT_WORKTREE` plus any `env` you configured exported. A single string runs
+one command; an array runs several in order. Setup output streams into the
+workspace transcript prefixed with `⚙`, and while it runs the workspace sits in
+`creating` and shows a `⚙` badge (the detail header reads `⚙ setting up…`).
+
+If a setup command exits non-zero, the rest are skipped and the agent is *not*
+started: the workspace lands in `error` with the setup output in its transcript,
+so a broken environment is loud rather than silently handed to an agent. Setup
+runs once, when the worktree is created — `R` (restart) reuses the worktree as-is
+and does not re-run it, since its effects are already there.
 
 ## Layout
 
@@ -342,7 +367,7 @@ src/
     git.ts       worktree / diff / merge helpers
     agents.ts    agent registry (claude, codex, opencode, mock)
     store.ts     workspace persistence (load/save state across restarts)
-    config.ts    per-repo conduct.json (default agent, fan-out, env, agent args)
+    config.ts    per-repo conduct.json (default agent, fan-out, setup, env, agent args)
     prompt.ts    builds the auto-improve prompt from repo context
     manager.ts   orchestrator: spawns agents, streams output, merges
   tui/

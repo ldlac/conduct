@@ -316,6 +316,9 @@ export function DetailPane({
             <Text color="yellow"> · awaiting input (i to reply)</Text>
           )
         )}
+        {ws.setupRunning && (
+          <Text color="yellow"> · ⚙ setting up…</Text>
+        )}
         {ws.conflicts && ws.conflicts.length > 0 && (
           <Text color="red" bold>
             {" · "}⚠ merge conflict ({ws.conflicts.length} file

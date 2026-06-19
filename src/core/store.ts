@@ -59,12 +59,15 @@ function serialize(
     // shellOutput / shellRunning are transient runner state (see runCommand):
     // session-scoped command output and a live-process flag, neither meaningful
     // after a restart — drop them rather than bloat the state file.
+    // setupRunning is the same kind of transient flag (see startWithSetup): a
+    // process that never survives a restart, so it must never persist as true.
     const copy: Workspace = {
       ...ws,
       output: ws.output.slice(-PERSIST_OUTPUT_LINES),
     };
     delete copy.shellOutput;
     delete copy.shellRunning;
+    delete copy.setupRunning;
     return copy;
   });
   const state: PersistedState = {

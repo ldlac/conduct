@@ -143,6 +143,15 @@ export interface Workspace {
    */
   shellRunning?: boolean;
   /**
+   * True while the configured setup command(s) (see {@link config.ConductConfig.setup})
+   * are running in this worktree, before the agent starts. The workspace sits
+   * in `creating` the whole time, so this flag is what lets the UI explain the
+   * lingering "creating" as "setting up…" rather than a stalled worktree.
+   * Transient — never true for a workspace restored from disk (setup, like the
+   * agent process, doesn't survive a restart, and a reused worktree skips it).
+   */
+  setupRunning?: boolean;
+  /**
    * Last-known size of the worktree's diff against the base branch. Refreshed
    * when a turn ends and when the diff is viewed (not while the agent is
    * actively working), so it reflects the most recent settled state. Undefined
