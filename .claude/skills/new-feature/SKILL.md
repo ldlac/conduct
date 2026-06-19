@@ -35,10 +35,9 @@ src/
     agents.ts           agent registry (claude, codex, opencode, mock) + availability
     manager.ts          WorkspaceManager: the orchestrator (spawn/stream/merge)
     store.ts            JSON persistence of workspaces across restarts
-    prompt.ts           Auto-improve prompt builder (repo context → agent prompt)
   tui/                  all UI — React/Ink
     App.tsx             top-level app, keybindings, view/scroll state
-    components/         WorkspaceList, DetailPane, NewWorkspaceForm, StatusBar, AutoImproveForm
+    components/         WorkspaceList, DetailPane, NewWorkspaceForm, StatusBar
   __tests__/            vitest test suite (6 files, 104+ tests)
     agents.test.ts, format.test.ts, detail.test.ts, manager.test.ts, sort.test.ts, store.test.ts
   index.tsx             entrypoint (opens the manager, mounts Ink, shell handoff)

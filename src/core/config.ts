@@ -3,7 +3,7 @@ import path from "node:path";
 
 export interface ConductConfig {
   /**
-   * Default agent to pre-select when creating workspaces or auto-improve.
+   * Default agent to pre-select when creating workspaces.
    * Must match an AgentBackend id (e.g. "claude", "codex", "opencode", "mock").
    */
   defaultAgent?: string;

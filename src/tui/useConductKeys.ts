@@ -2,7 +2,6 @@ import React from "react";
 import { useInput, useApp } from "ink";
 import type { WorkspaceManager } from "../core/manager.js";
 import type { SortMode, Workspace } from "../core/types.js";
-import type { AutoImproveFocus } from "../core/prompt.js";
 import { SORT_LABELS } from "./components/WorkspaceList.js";
 
 const SKILL_PROMPT =
@@ -18,8 +17,8 @@ export interface HandlerState {
   agents: Array<{ id: string; displayName: string }>;
   onShell: (ws: Workspace) => string | void;
 
-  mode: "list" | "detail" | "new" | "auto-improve";
-  setMode: (m: "list" | "detail" | "new" | "auto-improve") => void;
+  mode: "list" | "detail" | "new";
+  setMode: (m: "list" | "detail" | "new") => void;
   view: "output" | "diff" | "shell";
   setView: (v: "output" | "diff" | "shell") => void;
   scroll: number;
@@ -80,7 +79,6 @@ export interface HandlerState {
   doSync: (ws: Workspace | undefined) => void;
   doArchive: (ws: Workspace | undefined) => void;
   doClone: (ws: Workspace | undefined) => void;
-  doAutoImprove: (agentId?: string, focus?: AutoImproveFocus, count?: number) => void;
   doPruneSiblings: (ws: Workspace | undefined) => void;
   doMergeMany: () => void;
   doArchiveMany: () => void;
@@ -115,7 +113,6 @@ export function useConductKeys(s: HandlerState): void {
     s.diffFiles.length > 0;
   const isActive =
     s.mode !== "new" &&
-    s.mode !== "auto-improve" &&
     !s.composing &&
     !pickerOpen &&
     !fileListOpen;
@@ -303,10 +300,6 @@ export function useConductKeys(s: HandlerState): void {
         // archive the other attempts of the same race (see doPruneSiblings).
         if (input === "w") {
           s.doPruneSiblings(s.current);
-          return;
-        }
-        if (input === "A") {
-          s.setMode("auto-improve");
           return;
         }
         if (input === "?") {

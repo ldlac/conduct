@@ -53,15 +53,11 @@ describe("keybindingsByCategory", () => {
 
 describe("MODE_HINTS", () => {
   it("includes hints for every mode", () => {
-    const requiredModes = ["list", "detail", "new", "auto-improve"];
+    const requiredModes = ["list", "detail", "new"];
     for (const mode of requiredModes) {
       expect(MODE_HINTS[mode]).toBeDefined();
       expect(MODE_HINTS[mode].length).toBeGreaterThan(0);
     }
-  });
-
-  it("auto-improve hint mentions count step", () => {
-    expect(MODE_HINTS["auto-improve"]).toContain("count");
   });
 
   it("hints match the actual keybindings", () => {

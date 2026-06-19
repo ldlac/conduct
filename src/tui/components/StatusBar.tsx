@@ -5,7 +5,7 @@ import { usageText } from "./WorkspaceList.js";
 import { MODE_HINTS } from "../../core/keybindings.js";
 
 interface Props {
-  mode: "list" | "detail" | "new" | "auto-improve";
+  mode: "list" | "detail" | "new";
   view: "output" | "diff" | "shell";
   message?: string;
   repo: string;
