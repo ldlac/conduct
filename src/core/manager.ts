@@ -1528,34 +1528,23 @@ function fitSubject(desc: string, budget: number): string {
 }
 
 /**
- * Compose a commit message from a workspace's title and the agent's final
- * summary (see {@link Workspace.summary}). When a summary is present it drives
- * the message: its first line, normalized into a conventional-commit subject
- * (`type: description`, lower-cased, no trailing period, capped to a readable
- * length), with the rest of the summary as the body — so the commit says what
- * the agent actually did. With no summary it falls back to the workspace title,
- * still as a conventional `chore:`-style subject. A summary that already opens
+ * Compose a one-line conventional-commit message from a workspace's title and
+ * the agent's final summary (see {@link Workspace.summary}). When a summary is
+ * present it drives the subject; without one it falls back to the workspace
+ * title as a conventional `chore:`-style subject. A summary that already opens
  * with a conventional subject is kept as-is (just length-capped).
  */
 export function buildCommitMessage(title: string, summary?: string): string {
   const clean = summary ? sanitizeDashes(summary).trim() : "";
   const source = clean || sanitizeDashes(title).trim() || "update";
-  const lines = source.split("\n");
-  const firstLine = lines[0].trim();
-  const rest = clean ? lines.slice(1).join("\n").trim() : "";
+  const firstLine = source.split("\n")[0].trim();
 
-  // Already a conventional subject (e.g. the agent wrote "feat: …")? Respect it.
   if (CONVENTIONAL_PREFIX.test(firstLine)) {
-    const subject = fitSubject(firstLine, COMMIT_SUBJECT_MAX);
-    const body = subject === firstLine ? rest : clean;
-    return body ? `${subject}\n\n${body}` : subject;
+    return fitSubject(firstLine, COMMIT_SUBJECT_MAX);
   }
 
   const type = classifyCommitType(source);
-  // Strip a conversational lead-in and trailing punctuation.
   let desc = firstLine.replace(SUMMARY_LEADIN, "").replace(/[.\s]+$/, "");
-  // Drop a leading verb of the chosen type so the subject doesn't repeat it
-  // ("fix: fix the race" → "fix: the race"); keep it only if that empties desc.
   const typeRe = COMMIT_TYPES.find((t) => t.type === type)?.re;
   if (typeRe) {
     const stripped = desc.replace(
@@ -1565,21 +1554,16 @@ export function buildCommitMessage(title: string, summary?: string): string {
     if (stripped.trim()) desc = stripped;
   }
   desc = desc.trim();
-  // Lower-case the first letter so the description reads as a conventional summary.
   if (desc) desc = desc[0].toLowerCase() + desc.slice(1);
   else desc = "update";
 
   const budget = COMMIT_SUBJECT_MAX - (type.length + 2);
-  const subject = `${type}: ${fitSubject(desc, budget)}`;
-  // If the first line had to be shortened, keep the whole summary in the body so
-  // no detail is lost; otherwise the body is just the remaining lines.
-  const body = clean ? (desc.length > budget ? clean : rest) : "";
-  return body ? `${subject}\n\n${body}` : subject;
+  return `${type}: ${fitSubject(desc, budget)}`;
 }
 
-/** First line (subject) of the commit message, for the merge-commit summary. */
+/** Single-line commit subject, for the merge-commit summary. */
 export function commitSubject(title: string, summary?: string): string {
-  return buildCommitMessage(title, summary).split("\n", 1)[0];
+  return buildCommitMessage(title, summary);
 }
 
 async function pathExists(p: string): Promise<boolean> {
