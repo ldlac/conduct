@@ -208,14 +208,12 @@ describe("buildCommitMessage", () => {
     ).toBe("feat: a retry to the uploader");
   });
 
-  it("keeps the rest of a multi-line summary as the body", () => {
+  it("collapses a multi-line summary into a one-line subject", () => {
     const msg = buildCommitMessage(
       "t",
       "Fixed the race in the scheduler\n\nThe lock was released too early.",
     );
-    expect(msg).toBe(
-      "fix: the race in the scheduler\n\nThe lock was released too early.",
-    );
+    expect(msg).toBe("fix: the race in the scheduler");
   });
 
   it("respects a summary that already starts with a conventional subject", () => {
@@ -224,15 +222,14 @@ describe("buildCommitMessage", () => {
     );
   });
 
-  it("caps the subject and preserves the full summary in the body when shortened", () => {
+  it("caps a long subject to a single conventional-commit line", () => {
     const long =
       "Added an extremely long and exhaustively detailed description of the change that runs well past the conventional subject length limit";
     const msg = buildCommitMessage("t", long);
-    const [subject, , ...bodyLines] = msg.split("\n");
-    expect(subject.length).toBeLessThanOrEqual(72);
-    expect(subject.startsWith("feat: ")).toBe(true);
-    // Nothing is lost: the whole summary survives in the body.
-    expect(bodyLines.join("\n")).toBe(long);
+    // Should be a single-line subject, 72 chars or less.
+    expect(msg.split("\n").length).toBe(1);
+    expect(msg.length).toBeLessThanOrEqual(72);
+    expect(msg.startsWith("feat: ")).toBe(true);
   });
 
   it("replaces dashes so no em/en dash reaches the message", () => {
