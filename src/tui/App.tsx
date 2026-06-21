@@ -16,7 +16,6 @@ import { QuestionPrompt } from "./components/QuestionPrompt.js";
 import { DiffFileList } from "./components/DiffFileList.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.js";
-import { DiffCompare } from "./components/DiffCompare.js";
 import {
   NewWorkspaceForm,
   type AgentInfo,
@@ -153,19 +152,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
   }, []);
   const hasMarks = markedIds.length > 0;
   const clearMarks = useCallback(() => setMarkedIds([]), []);
-  // Side-by-side diff comparison between two workspaces.
-  const [comparing, setComparing] = useState(false);
-  const [compareLeftId, setCompareLeftId] = useState<string | undefined>();
-  const [compareRightId, setCompareRightId] = useState<string | undefined>();
-  const [compareLeftDiff, setCompareLeftDiff] = useState("");
-  const [compareRightDiff, setCompareRightDiff] = useState("");
-  const [compareLeftFiles, setCompareLeftFiles] = useState<DiffFileInfo[]>([]);
-  const [compareRightFiles, setCompareRightFiles] = useState<DiffFileInfo[]>([]);
-  const [compareLeftFileIndex, setCompareLeftFileIndex] = useState(0);
-  const [compareRightFileIndex, setCompareRightFileIndex] = useState(0);
-  const [compareLeftScroll, setCompareLeftScroll] = useState(0);
-  const [compareRightScroll, setCompareRightScroll] = useState(0);
-  const [compareFocus, setCompareFocus] = useState<"left" | "right">("left");
   // Ticks once a second while an agent is running so live runtime badges
   // advance; `now` is read by the list/detail components for elapsed time.
   const [now, setNow] = useState(() => Date.now());
@@ -812,40 +798,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     flash(`restarted ${count} of ${stopped.length} workspace${stopped.length === 1 ? "" : "s"}`);
   }, [manager, items, flash]);
 
-  const doCompare = useCallback(
-    async (leftId: string, rightId: string) => {
-      const leftWs = manager.get(leftId);
-      const rightWs = manager.get(rightId);
-      if (!leftWs || !rightWs) {
-        flash("one of the workspaces no longer exists");
-        return;
-      }
-      try {
-        const [leftDiff, rightDiff] = await Promise.all([
-          manager.getDiff(leftId),
-          manager.getDiff(rightId),
-        ]);
-        setCompareLeftId(leftId);
-        setCompareRightId(rightId);
-        setCompareLeftDiff(leftDiff);
-        setCompareRightDiff(rightDiff);
-        setCompareLeftFiles(parseDiffFiles(leftDiff));
-        setCompareRightFiles(parseDiffFiles(rightDiff));
-        setCompareLeftFileIndex(0);
-        setCompareRightFileIndex(0);
-        setCompareLeftScroll(0);
-        setCompareRightScroll(0);
-        setCompareFocus("left");
-        setMode("list");
-        setComparing(true);
-        flash(`comparing ${leftWs.title} ↔ ${rightWs.title}`);
-      } catch (err) {
-        flash(`compare failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [manager, flash],
-  );
-
   const switchWorkspace = useCallback(
     (direction: 1 | -1) => {
       const next = ordered[selectedIndex + direction];
@@ -897,15 +849,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
     sendReply, loadDiff,
     flash, setMessage, setSelectedId,
     confirming, setConfirming,
-    comparing, setComparing,
-    compareLeftDiff, compareRightDiff,
-    compareLeftFiles, compareRightFiles,
-    compareLeftFileIndex, setCompareLeftFileIndex,
-    compareRightFileIndex, setCompareRightFileIndex,
-    compareLeftScroll, setCompareLeftScroll,
-    compareRightScroll, setCompareRightScroll,
-    compareFocus, setCompareFocus,
-    doCompare,
   });
 
   if (showHelp) {
@@ -967,29 +910,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
       height={size.rows - 1}
       overflow="hidden"
     >
-      {comparing &&
-      compareLeftId && compareRightId &&
-      (compareLeftDiff || compareRightDiff) ? (
-        <DiffCompare
-          left={{
-            ws: manager.get(compareLeftId)!,
-            diff: compareLeftDiff,
-            files: compareLeftFiles,
-          }}
-          right={{
-            ws: manager.get(compareRightId)!,
-            diff: compareRightDiff,
-            files: compareRightFiles,
-          }}
-          leftFileIndex={compareLeftFileIndex}
-          rightFileIndex={compareRightFileIndex}
-          leftScroll={compareLeftScroll}
-          rightScroll={compareRightScroll}
-          focus={compareFocus}
-          width={size.cols - 2}
-          height={bodyHeight}
-        />
-      ) : (
       <Box flexDirection="row" height={bodyHeight}>
         <WorkspaceList
           items={ordered}
@@ -1071,7 +991,6 @@ export function App({ manager, agents, onShell, initialSelectedId }: Props) {
         />
         )}
       </Box>
-      )}
       <StatusBar
         mode={mode}
         view={view}
