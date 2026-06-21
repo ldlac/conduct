@@ -1,5 +1,5 @@
 {
-  "defaultAgent": "claude-all",
+  "defaultAgent": "opencode-all",
   "setup": "pnpm install",
   "prompts": {
     "new-features": "Analyze and improve this codebase (your current working directory). First explore the codebase to understand its purpose and architecture. Then focus on building new features that would add significant value to this project. Look for missing functionality that users would expect, identify opportunities for impactful additions, and implement them. Prioritize features that align with the project's purpose and provide the most value. Work iteratively, implementing one feature at a time.",
