@@ -63,23 +63,6 @@ export interface HandlerState {
   setShowHelp: (s: boolean) => void;
   confirming: { label: string; action: () => void } | null;
   setConfirming: (c: { label: string; action: () => void } | null) => void;
-  comparing: boolean;
-  setComparing: (c: boolean) => void;
-  compareLeftDiff: string;
-  compareRightDiff: string;
-  compareLeftFiles: Array<{ path: string; content: string }>;
-  compareRightFiles: Array<{ path: string; content: string }>;
-  compareLeftFileIndex: number;
-  setCompareLeftFileIndex: (i: number) => void;
-  compareRightFileIndex: number;
-  setCompareRightFileIndex: (i: number) => void;
-  compareLeftScroll: number;
-  setCompareLeftScroll: (s: number) => void;
-  compareRightScroll: number;
-  setCompareRightScroll: (s: number) => void;
-  compareFocus: "left" | "right";
-  setCompareFocus: (f: "left" | "right") => void;
-  doCompare: (leftId: string, rightId: string) => void;
   sortMode: SortMode;
   setSortMode: (m: SortMode) => void;
   hasMarks: boolean;
@@ -187,12 +170,6 @@ export function useConductKeys(s: HandlerState): void {
 
       if (s.searching) {
         handleSearch(input, key, s);
-        return;
-      }
-
-      // Side-by-side comparison mode — keyboard takes over while active.
-      if (s.comparing) {
-        handleCompare(input, key, s);
         return;
       }
 
@@ -483,79 +460,6 @@ function handleSearch(
   }
 }
 
-function handleCompare(
-  input: string,
-  key: {
-    escape?: boolean;
-    tab?: boolean;
-    upArrow?: boolean;
-    downArrow?: boolean;
-    pageUp?: boolean;
-    pageDown?: boolean;
-    return?: boolean;
-    shift?: boolean;
-  },
-  s: HandlerState,
-): void {
-  // Exit compare mode.
-  if (key.escape || input === "v") {
-    s.setComparing(false);
-    return;
-  }
-  // Toggle which panel has keyboard focus.
-  if (key.tab) {
-    s.setCompareFocus(s.compareFocus === "left" ? "right" : "left");
-    return;
-  }
-  // File navigation — move on both sides in sync.
-  if (input === "[" || input === "{") {
-    const nextLeft = Math.max(0, s.compareLeftFileIndex - 1);
-    const nextRight = Math.max(0, s.compareRightFileIndex - 1);
-    s.setCompareLeftFileIndex(nextLeft);
-    s.setCompareRightFileIndex(nextRight);
-    s.setCompareLeftScroll(0);
-    s.setCompareRightScroll(0);
-    return;
-  }
-  if (input === "]" || input === "}") {
-    const maxLeft = Math.max(0, s.compareLeftFiles.length - 1);
-    const maxRight = Math.max(0, s.compareRightFiles.length - 1);
-    const nextLeft = Math.min(maxLeft, s.compareLeftFileIndex + 1);
-    const nextRight = Math.min(maxRight, s.compareRightFileIndex + 1);
-    s.setCompareLeftFileIndex(nextLeft);
-    s.setCompareRightFileIndex(nextRight);
-    s.setCompareLeftScroll(0);
-    s.setCompareRightScroll(0);
-    return;
-  }
-  // Scroll — affect the focused panel.
-  const isLeft = s.compareFocus === "left";
-  const scroll = isLeft ? s.compareLeftScroll : s.compareRightScroll;
-  const setScroll = isLeft ? s.setCompareLeftScroll : s.setCompareRightScroll;
-  const files = isLeft ? s.compareLeftFiles : s.compareRightFiles;
-  const fileIndex = isLeft ? s.compareLeftFileIndex : s.compareRightFileIndex;
-
-  if (input === "g") {
-    setScroll(0);
-    return;
-  }
-  if (input === "G") {
-    // Rough estimate: set to a very large number and rely on the component
-    // clamping to maxScroll. The exact max depends on terminal width and
-    // content wrapping, which the component computes at render time.
-    setScroll(999_999);
-    return;
-  }
-  let next: number | undefined;
-  if (key.upArrow || input === "k") next = scroll - 1;
-  else if (key.downArrow || input === "j") next = scroll + 1;
-  else if (key.pageUp) next = scroll - 10;
-  else if (key.pageDown) next = scroll + 10;
-  if (next !== undefined) {
-    setScroll(Math.max(0, next));
-  }
-}
-
 function handleListMode(
   input: string,
   key: { upArrow?: boolean; downArrow?: boolean; return?: boolean; tab?: boolean; ctrl?: boolean },
@@ -579,15 +483,6 @@ function handleListMode(
     s.setMode("detail");
     s.setView("diff");
     s.loadDiff(s.current);
-  } else if (input === "v") {
-    // Compare two workspaces side-by-side: exactly two marks needed.
-    if (s.markedIds.length === 2) {
-      s.doCompare(s.markedIds[0], s.markedIds[1]);
-    } else if (s.markedIds.length > 2) {
-      s.flash("mark exactly 2 workspaces to compare side-by-side");
-    } else {
-      s.flash("mark two workspaces with Space, then v to compare");
-    }
   } else if (input === "/") {
     s.setFiltering(true);
   } else if (key.ctrl && input === "f") {

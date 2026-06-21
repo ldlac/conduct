@@ -42,7 +42,6 @@ export const KEYBINDINGS: Keybinding[] = [
   { keys: "Alt+a", description: "archive all merged workspaces", category: "actions" },
   { keys: "Alt+s", description: "stop all running agents", category: "actions" },
   { keys: "Alt+r", description: "restart all stopped / failed agents", category: "actions" },
-  { keys: "v", description: "diff: compare two marked workspaces side by side", category: "actions" },
 
   // Detail view
   { keys: "o / ↵", description: "output view (tails live)", category: "detail" },
