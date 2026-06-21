@@ -32,11 +32,13 @@ export function run(
   args: string[],
   cwd?: string,
   timeoutMs?: number,
+  stdin?: "pipe" | "ignore",
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       cwd,
       env: { ...process.env, GIT_PAGER: "cat", PAGER: "cat" },
+      stdio: [stdin ?? "pipe", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";

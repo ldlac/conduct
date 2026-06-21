@@ -1123,10 +1123,26 @@ export class WorkspaceManager extends EventEmitter {
     // workspace that's now merged.
     if (this.isRunning(id)) this.stop(id);
 
-    await this.git.commitAll(ws.path, buildCommitMessage(ws.title, ws.summary));
+    // Ask the LLM for a commit message based on the actual workspace diff.
+    // Falls back to the heuristic buildCommitMessage when the LLM isn't
+    // available, the call times out, or the diff is empty.
+    let commitMsg: string;
+    try {
+      const diff = await this.git.diff(ws.path, this.baseBranch);
+      if (diff.trim()) {
+        const llmMsg = await askLlmForCommitMessage(diff, ws.title);
+        commitMsg = llmMsg ?? buildCommitMessage(ws.title, ws.summary);
+      } else {
+        commitMsg = buildCommitMessage(ws.title, ws.summary);
+      }
+    } catch {
+      commitMsg = buildCommitMessage(ws.title, ws.summary);
+    }
+
+    await this.git.commitAll(ws.path, commitMsg);
     const result = await this.git.merge(
       ws.branch,
-      `Merge conduct workspace: ${commitSubject(ws.title, ws.summary)}`,
+      `Merge conduct workspace: ${commitMsg}`,
     );
     if (!result.ok) {
       ws.conflicts = result.conflicts;
@@ -1564,6 +1580,74 @@ export function buildCommitMessage(title: string, summary?: string): string {
 /** Single-line commit subject, for the merge-commit summary. */
 export function commitSubject(title: string, summary?: string): string {
   return buildCommitMessage(title, summary);
+}
+
+/**
+ * Maximum diff characters to send to the LLM for commit message generation.
+ * Large diffs are truncated to keep the prompt fast, cheap, and within context
+ * limits even for workspaces that touched many files.
+ */
+const COMMIT_DIFF_MAX_CHARS = 4000;
+
+/** Timeout for the LLM commit-message call. Fast enough not to feel slow. */
+const COMMIT_LLM_TIMEOUT = 10_000;
+
+/** Strip ANSI escape codes from text. */
+function stripAnsi(text: string): string {
+  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+/** Strip surrounding markdown backticks or quotes from a line. */
+function stripWrappers(line: string): string {
+  return line.replace(/^[`"']+|[`"']+$/g, "").trim();
+}
+
+/**
+ * Generate a one-line conventional commit message from a git diff by asking
+ * an available CLI agent (opencode or claude). Returns null when no agent is
+ * installed or the call fails, so the caller can fall through to heuristic-based
+ * generation via {@link buildCommitMessage}.
+ */
+export async function askLlmForCommitMessage(
+  diff: string,
+  title: string,
+): Promise<string | null> {
+  const truncated =
+    diff.length > COMMIT_DIFF_MAX_CHARS
+      ? diff.slice(0, COMMIT_DIFF_MAX_CHARS) + "\n... (truncated)"
+      : diff;
+
+  const prompt = [
+    `Generate a one-line conventional commit message for this git diff.`,
+    `The workspace title is: "${title}"`,
+    `Return ONLY the commit message on a single line — e.g. "feat: add user login" or "fix: resolve crash on startup".`,
+    `Do NOT include any explanation, markdown formatting, backticks, or surrounding text.`,
+    ``,
+    truncated,
+  ].join("\n");
+
+  // Try available CLI agents in order of preference.
+  const agents: Array<{ cmd: string; args: string[] }> = [
+    { cmd: "opencode", args: ["run"] },
+    { cmd: "claude", args: ["-p"] },
+  ];
+
+  for (const { cmd, args } of agents) {
+    if (!(await commandExists(cmd))) continue;
+    const res = await run(cmd, [...args, prompt], undefined, COMMIT_LLM_TIMEOUT, "ignore");
+    if (res.code !== 0) continue;
+    const lines = stripAnsi(res.stdout)
+      .split("\n")
+      .map((l) => stripWrappers(l.trim()))
+      .filter(Boolean);
+    for (const line of lines) {
+      if (CONVENTIONAL_PREFIX.test(line)) return fitSubject(line, COMMIT_SUBJECT_MAX);
+    }
+    const last = lines[lines.length - 1];
+    if (last) return fitSubject(last, COMMIT_SUBJECT_MAX);
+  }
+
+  return null;
 }
 
 async function pathExists(p: string): Promise<boolean> {
